@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест Frontend</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        input[type="url"] { width: 300px; padding: 10px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+        .loading { display: none; color: #666; }
+        .results { display: none; margin-top: 20px; padding: 20px; background: #f8f9fa; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Тест Frontend Accessibility Evaluator</h1>
+    
+    <form id="testForm">
+        <div class="form-group">
+            <label for="url">URL для тестування:</label><br>
+            <input type="url" id="url" value="https://example.com" required>
+        </div>
+        <button type="submit" id="submitBtn">Тестувати</button>
+    </form>
+    
+    <div id="loading" class="loading">Завантаження...</div>
+    <div id="results" class="results"></div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('✅ DOM завантажено');
+            
+            const form = document.getElementById('testForm');
+            const urlInput = document.getElementById('url');
+            const submitBtn = document.getElementById('submitBtn');
+            const loadingDiv = document.getElementById('loading');
+            const resultsDiv = document.getElementById('results');
+            
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                console.log('📝 Форма відправлена');
+                
+                const url = urlInput.value.trim();
+                console.log('🔗 URL:', url);
+                
+                // Показати завантаження
+                loadingDiv.style.display = 'block';
+                resultsDiv.style.display = 'none';
+                submitBtn.disabled = true;
+                
+                try {
+                    console.log('📡 Відправляємо запит...');
+                    
+                    const response = await fetch('http://localhost:8001/api/evaluate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ url: url })
+                    });
+                    
+                    console.log('📨 Статус відповіді:', response.status);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('📊 Отримані дані:', data);
+                    
+                    // Показати результати
+                    resultsDiv.innerHTML = `
+                        <h3>✅ Результати аналізу</h3>
+                        <p><strong>URL:</strong> ${data.url}</p>
+                        <p><strong>Скор:</strong> ${(data.final_score * 100).toFixed(1)}%</p>
+                        <p><strong>Рівень:</strong> ${data.quality_level}</p>
+                        <p><strong>Опис:</strong> ${data.quality_description}</p>
+                        
+                        <h4>Підскори:</h4>
+                        <ul>
+                            <li>Перцептивність: ${(data.subscores.perceptibility * 100).toFixed(1)}%</li>
+                            <li>Керованість: ${(data.subscores.operability * 100).toFixed(1)}%</li>
+                            <li>Зрозумілість: ${(data.subscores.understandability * 100).toFixed(1)}%</li>
+                            <li>Локалізація: ${(data.subscores.localization * 100).toFixed(1)}%</li>
+                        </ul>
+                        
+                        <h4>Рекомендації (${data.recommendations.length}):</h4>
+                        <ul>
+                            ${data.recommendations.map(rec => `<li>${rec.category}: ${rec.recommendation}</li>`).join('')}
+                        </ul>
+                    `;
+                    resultsDiv.style.display = 'block';
+                    
+                } catch (error) {
+                    console.error('❌ Помилка:', error);
+                    resultsDiv.innerHTML = `<div class="error">❌ Помилка: ${error.message}</div>`;
+                    resultsDiv.style.display = 'block';
+                } finally {
+                    loadingDiv.style.display = 'none';
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
