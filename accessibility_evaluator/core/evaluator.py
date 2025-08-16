@@ -78,6 +78,7 @@ class AccessibilityEvaluator:
                 'subscores': subscores,
                 'final_score': final_score,
                 'recommendations': recommendations,
+                'axe_results': page_data.get('axe_results', {}),  # Додаємо axe_results
                 'status': 'success'
             }
             
@@ -163,3 +164,105 @@ class AccessibilityEvaluator:
             })
         
         return recommendations
+    
+    async def evaluate_html_content(self, html_content: str, base_url: str = "http://localhost", title: str = "HTML Document") -> Dict[str, Any]:
+        """
+        Оцінка доступності HTML контенту без завантаження з URL
+        
+        Args:
+            html_content: HTML контент для аналізу
+            base_url: Базовий URL для відносних посилань
+            title: Заголовок документа
+            
+        Returns:
+            Словник з результатами аналізу
+        """
+        try:
+            # Створюємо page_data з HTML контенту
+            page_data = await self._create_page_data_from_html(html_content, base_url, title)
+            
+            # Розрахунок всіх метрик
+            metrics = await self.calculate_all_metrics(page_data)
+            
+            # Розрахунок підскорів
+            subscores = self.calculator.calculate_subscores(metrics)
+            
+            # Фінальний скор
+            final_score = self.calculator.calculate_final_score(subscores)
+            
+            # Генерація рекомендацій
+            recommendations = self.generate_recommendations(metrics)
+            
+            return {
+                'url': f"{base_url} (HTML контент)",
+                'metrics': metrics,
+                'subscores': subscores,
+                'final_score': final_score,
+                'recommendations': recommendations,
+                'status': 'success'
+            }
+            
+        except Exception as e:
+            return {
+                'url': f"{base_url} (HTML контент)",
+                'error': str(e),
+                'status': 'error'
+            }
+    
+    async def _create_page_data_from_html(self, html_content: str, base_url: str, title: str) -> Dict[str, Any]:
+        """Створення page_data з HTML контенту для аналізу"""
+        
+        from playwright.async_api import async_playwright
+        
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            
+            try:
+                print(f"📄 Завантаження HTML контенту...")
+                
+                # Встановлюємо HTML контент
+                await page.set_content(html_content, wait_until="domcontentloaded")
+                
+                # Збираємо дані аналогічно до web_scraper
+                print("🔍 Збір інтерактивних елементів...")
+                interactive_elements = await self.web_scraper._get_interactive_elements(page)
+                
+                print("📝 Збір текстових елементів...")
+                text_elements = await self.web_scraper._get_text_elements(page)
+                
+                print("🎬 Збір медіа елементів...")
+                media_elements = await self.web_scraper._get_media_elements(page)
+                
+                print("📋 Збір форм...")
+                form_elements = await self.web_scraper._get_form_elements(page)
+                
+                print("🎨 Збір стилів...")
+                computed_styles = await self.web_scraper._get_computed_styles(page)
+                
+                print("🔍 Запуск axe-core аналізу...")
+                axe_results = await self.web_scraper._run_axe_core(page)
+                
+                page_data = {
+                    'url': base_url,
+                    'html_content': html_content,
+                    'title': title,
+                    'page_depth': 0,  # HTML контент не має глибини
+                    'interactive_elements': interactive_elements,
+                    'text_elements': text_elements,
+                    'media_elements': media_elements,
+                    'form_elements': form_elements,
+                    'computed_styles': computed_styles,
+                    'axe_results': axe_results
+                }
+                
+                print(f"✅ Збір даних з HTML завершено. Знайдено:")
+                print(f"   📝 Текстових елементів: {len(text_elements)}")
+                print(f"   🔗 Інтерактивних елементів: {len(interactive_elements)}")
+                print(f"   🎬 Медіа елементів: {len(media_elements)}")
+                print(f"   📋 Форм: {len(form_elements)}")
+                
+                return page_data
+                
+            finally:
+                await browser.close()

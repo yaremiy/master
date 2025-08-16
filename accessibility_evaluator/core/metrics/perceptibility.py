@@ -29,154 +29,170 @@ class PerceptibilityMetrics:
     
     def calculate_alt_text_metric(self, page_data: Dict[str, Any]) -> float:
         """
-        Розрахунок метрики альтернативного тексту (UAC-1.1.1-G)
+        Розрахунок метрики альтернативного тексту (UAC-1.1.1-G) з використанням axe-core
         
         Формула: X = A / B
-        A = кількість мультимедійних елементів зі змістовними текстовими альтернативами
-        B = загальна кількість мультимедійних елементів
+        A = кількість зображень з правильним alt текстом (з axe-core passes)
+        B = загальна кількість зображень (passes + violations)
         """
         
-        media_elements = page_data.get('media_elements', [])
+        axe_results = page_data.get('axe_results', {})
         
-        if not media_elements:
-            return 1.0  # Немає медіа = немає проблем
+        print(f"\n🔍 === ДЕТАЛЬНИЙ АНАЛІЗ ALT-TEXT МЕТРИКИ ===")
         
-        meaningful_alt_count = 0
+        # Згідно з axe-core документацією, основні правила для зображень:
+        alt_related_rules = ['image-alt', 'input-image-alt', 'area-alt']
         
-        for element in media_elements:
-            if element['type'] == 'image':
-                if self._has_meaningful_alt_text(element):
-                    meaningful_alt_count += 1
-            elif element['type'] in ['video', 'audio']:
-                # Для відео/аудіо перевіряємо наявність описів
-                if element.get('aria_label') or element.get('title'):
-                    meaningful_alt_count += 1
+        total_images = 0
+        correct_images = 0
         
-        return meaningful_alt_count / len(media_elements)
+        print(f"📋 Аналізуємо правила: {alt_related_rules}")
+        
+        for rule_id in alt_related_rules:
+            print(f"\n🔍 Правило: {rule_id}")
+            
+            # Підраховуємо правильні зображення (passes)
+            passes = self._get_axe_rule_results(axe_results, 'passes', rule_id)
+            if passes:
+                passes_count = len(passes.get('nodes', []))
+                correct_images += passes_count
+                total_images += passes_count
+                print(f"   ✅ Passes: {passes_count} елементів")
+                
+                # Показуємо деталі перших кількох елементів
+                nodes = passes.get('nodes', [])[:3]  # Перші 3 елементи
+                for i, node in enumerate(nodes):
+                    target = node.get('target', ['невідомо'])
+                    html = node.get('html', 'немає HTML')[:100] + '...' if len(node.get('html', '')) > 100 else node.get('html', 'немає HTML')
+                    print(f"     {i+1}. Target: {target}")
+                    print(f"        HTML: {html}")
+            else:
+                print(f"   ✅ Passes: 0 елементів")
+            
+            # Підраховуємо проблемні зображення (violations)
+            violations = self._get_axe_rule_results(axe_results, 'violations', rule_id)
+            if violations:
+                violations_count = len(violations.get('nodes', []))
+                total_images += violations_count
+                print(f"   ❌ Violations: {violations_count} елементів")
+                print(f"   📝 Опис проблеми: {violations.get('description', 'немає опису')}")
+                
+                # Показуємо деталі перших кількох проблемних елементів
+                nodes = violations.get('nodes', [])[:3]  # Перші 3 елементи
+                for i, node in enumerate(nodes):
+                    target = node.get('target', ['невідомо'])
+                    html = node.get('html', 'немає HTML')[:100] + '...' if len(node.get('html', '')) > 100 else node.get('html', 'немає HTML')
+                    failure_summary = node.get('failureSummary', 'немає опису помилки')
+                    print(f"     {i+1}. Target: {target}")
+                    print(f"        HTML: {html}")
+                    print(f"        Проблема: {failure_summary}")
+                # correct_images НЕ збільшуємо для violations
+            else:
+                print(f"   ❌ Violations: 0 елементів")
+        
+        print(f"\n📊 ПІДСУМОК ALT-TEXT:")
+        print(f"   Правильних зображень: {correct_images}")
+        print(f"   Загальних зображень: {total_images}")
+        
+        # Якщо немає зображень, повертаємо 1.0
+        if total_images == 0:
+            print(f"   ⚠️ Немає зображень для аналізу - повертаємо 1.0")
+            return 1.0
+        
+        # Формула: X = A / B
+        score = correct_images / total_images
+        print(f"   🎯 Розрахунок: {correct_images} / {total_images} = {score:.3f}")
+        print(f"=== КІНЕЦЬ ALT-TEXT АНАЛІЗУ ===\n")
+        
+        return score
     
-    def _has_meaningful_alt_text(self, image_element: Dict[str, Any]) -> bool:
-        """Перевірка чи має зображення змістовний альтернативний текст"""
+    def _get_axe_rule_results(self, axe_results: Dict[str, Any], result_type: str, rule_id: str) -> Dict[str, Any]:
+        """Отримання результатів конкретного правила axe-core"""
         
-        alt_text = image_element.get('alt', '')
-        
-        # Перевірка наявності та якості alt тексту
-        if not alt_text:
-            return False
-        
-        # Фільтруємо неякісні alt тексти
-        bad_alt_patterns = [
-            r'^image\d*$',
-            r'^img\d*$',
-            r'^picture\d*$',
-            r'^photo\d*$',
-            r'^\w+\.(jpg|jpeg|png|gif|svg)$',
-            r'^untitled$',
-            r'^placeholder$'
-        ]
-        
-        alt_lower = alt_text.lower().strip()
-        
-        for pattern in bad_alt_patterns:
-            if re.match(pattern, alt_lower):
-                return False
-        
-        # Alt текст повинен бути достатньо описовим
-        return len(alt_text.strip()) >= 2
+        results = axe_results.get(result_type, [])
+        for result in results:
+            if result.get('id') == rule_id:
+                return result
+        return {}
+    
     
     async def calculate_contrast_metric(self, page_data: Dict[str, Any]) -> float:
         """
-        Розрахунок метрики контрастності тексту (UAC-1.1.2-G)
+        Розрахунок метрики контрастності тексту (UAC-1.1.2-G) з використанням axe-core
         
-        Формула: X = Σ(A × B+) / Σ(A × B)
-        A = рівень контрасту
-        B+ = кількість елементів, що задовольняють умови
-        B = кількість всіх елементів
+        Формула: X = A / B
+        A = кількість текстових елементів з достатнім контрастом (з axe-core passes)
+        B = загальна кількість текстових елементів (passes + violations)
         """
         
-        text_elements = page_data.get('text_elements', [])
+        axe_results = page_data.get('axe_results', {})
         
-        if not text_elements:
+        print(f"\n🎨 === ДЕТАЛЬНИЙ АНАЛІЗ КОНТРАСТУ ===")
+        
+        # Отримуємо результати для правил контрасту
+        contrast_rules = ['color-contrast', 'color-contrast-enhanced']
+        
+        total_elements = 0
+        correct_elements = 0
+        
+        print(f"📋 Аналізуємо правила: {contrast_rules}")
+        
+        for rule_id in contrast_rules:
+            print(f"\n🔍 Правило: {rule_id}")
+            
+            # Підраховуємо елементи з правильним контрастом (passes)
+            passes = self._get_axe_rule_results(axe_results, 'passes', rule_id)
+            if passes:
+                passes_count = len(passes.get('nodes', []))
+                correct_elements += passes_count
+                total_elements += passes_count
+                print(f"   ✅ Passes: {passes_count} елементів")
+                
+                # Показуємо деталі перших кількох елементів
+                nodes = passes.get('nodes', [])[:2]  # Перші 2 елементи
+                for i, node in enumerate(nodes):
+                    target = node.get('target', ['невідомо'])
+                    html = node.get('html', 'немає HTML')[:80] + '...' if len(node.get('html', '')) > 80 else node.get('html', 'немає HTML')
+                    print(f"     {i+1}. Target: {target}")
+                    print(f"        HTML: {html}")
+            else:
+                print(f"   ✅ Passes: 0 елементів")
+            
+            # Підраховуємо елементи з проблемним контрастом (violations)
+            violations = self._get_axe_rule_results(axe_results, 'violations', rule_id)
+            if violations:
+                violations_count = len(violations.get('nodes', []))
+                total_elements += violations_count
+                print(f"   ❌ Violations: {violations_count} елементів")
+                print(f"   📝 Опис проблеми: {violations.get('description', 'немає опису')}")
+                
+                # Показуємо деталі перших кількох проблемних елементів
+                nodes = violations.get('nodes', [])[:2]  # Перші 2 елементи
+                for i, node in enumerate(nodes):
+                    target = node.get('target', ['невідомо'])
+                    html = node.get('html', 'немає HTML')[:80] + '...' if len(node.get('html', '')) > 80 else node.get('html', 'немає HTML')
+                    failure_summary = node.get('failureSummary', 'немає опису помилки')
+                    print(f"     {i+1}. Target: {target}")
+                    print(f"        HTML: {html}")
+                    print(f"        Проблема: {failure_summary}")
+                # correct_elements НЕ збільшуємо для violations
+            else:
+                print(f"   ❌ Violations: 0 елементів")
+        
+        print(f"\n📊 ПІДСУМОК КОНТРАСТУ:")
+        print(f"   Правильних елементів: {correct_elements}")
+        print(f"   Загальних елементів: {total_elements}")
+        
+        # Якщо немає текстових елементів, повертаємо 1.0
+        if total_elements == 0:
+            print(f"   ⚠️ Немає текстових елементів для аналізу - повертаємо 1.0")
             return 1.0
         
-        total_weighted_score = 0
-        total_elements = 0
+        score = correct_elements / total_elements
+        print(f"   🎯 Розрахунок: {correct_elements} / {total_elements} = {score:.3f}")
+        print(f"=== КІНЕЦЬ АНАЛІЗУ КОНТРАСТУ ===\n")
         
-        for element in text_elements:
-            if not element.get('is_visible', True):
-                continue
-                
-            styles = element.get('styles', {})
-            
-            # Отримання кольорів
-            text_color = self._parse_color(styles.get('color', 'rgb(0,0,0)'))
-            bg_color = self._parse_color(styles.get('backgroundColor', 'rgb(255,255,255)'))
-            
-            # Розрахунок контрасту
-            contrast_ratio = self._calculate_contrast_ratio(text_color, bg_color)
-            
-            # Визначення вимог до контрасту
-            font_size = self._parse_font_size(styles.get('fontSize', '16px'))
-            font_weight = styles.get('fontWeight', 'normal')
-            
-            required_ratio = self._get_required_contrast_ratio(font_size, font_weight)
-            
-            # Перевірка відповідності
-            meets_requirement = 1 if contrast_ratio >= required_ratio else 0
-            
-            total_weighted_score += contrast_ratio * meets_requirement
-            total_elements += contrast_ratio
-        
-        return total_weighted_score / total_elements if total_elements > 0 else 0
-    
-    def _parse_color(self, color_string: str) -> tuple:
-        """Парсинг CSS кольору в RGB"""
-        
-        # Простий парсер для rgb() та rgba()
-        if 'rgb' in color_string:
-            numbers = re.findall(r'\d+', color_string)
-            if len(numbers) >= 3:
-                return (int(numbers[0]), int(numbers[1]), int(numbers[2]))
-        
-        # За замовчуванням
-        return (0, 0, 0) if 'rgb(0' in color_string else (255, 255, 255)
-    
-    def _calculate_contrast_ratio(self, color1: tuple, color2: tuple) -> float:
-        """Розрахунок контрасту згідно з WCAG"""
-        
-        def get_relative_luminance(rgb):
-            """Розрахунок відносної яскравості"""
-            r, g, b = [x / 255.0 for x in rgb]
-            
-            def gamma_correct(c):
-                return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-            
-            r = gamma_correct(r)
-            g = gamma_correct(g)
-            b = gamma_correct(b)
-            
-            return 0.2126 * r + 0.7152 * g + 0.0722 * b
-        
-        lum1 = get_relative_luminance(color1)
-        lum2 = get_relative_luminance(color2)
-        
-        lighter = max(lum1, lum2)
-        darker = min(lum1, lum2)
-        
-        return (lighter + 0.05) / (darker + 0.05)
-    
-    def _parse_font_size(self, font_size_string: str) -> float:
-        """Парсинг розміру шрифту"""
-        
-        numbers = re.findall(r'\d+', font_size_string)
-        return float(numbers[0]) if numbers else 16.0
-    
-    def _get_required_contrast_ratio(self, font_size: float, font_weight: str) -> float:
-        """Визначення необхідного рівня контрасту"""
-        
-        # Великий текст (18pt+ або 14pt+ bold)
-        is_large = font_size >= 18 or (font_size >= 14 and font_weight in ['bold', '600', '700', '800', '900'])
-        
-        return 3.0 if is_large else 4.5
+        return score
     
     def calculate_media_accessibility_metric(self, page_data: Dict[str, Any]) -> float:
         """

@@ -62,6 +62,9 @@ class WebScraper:
                 print("🎨 Збір стилів...")
                 computed_styles = await self._get_computed_styles(page)
                 
+                print("🔍 Запуск axe-core аналізу...")
+                axe_results = await self._run_axe_core(page)
+                
                 page_data = {
                     'url': url,
                     'html_content': html_content,
@@ -72,6 +75,7 @@ class WebScraper:
                     'media_elements': media_elements,
                     'form_elements': form_elements,
                     'computed_styles': computed_styles,
+                    'axe_results': axe_results,  # Додаємо результати axe-core
                     'page_object': page  # Зберігаємо для подальшого використання
                 }
                 
@@ -277,3 +281,81 @@ class WebScraper:
         ''')
         
         return styles
+    
+    async def _run_axe_core(self, page: Page) -> Dict[str, Any]:
+        """Запуск axe-core аналізу доступності"""
+        
+        try:
+            # Перевіряємо наявність axe-core
+            axe_path = "node_modules/axe-core/axe.min.js"
+            import os
+            if not os.path.exists(axe_path):
+                print(f"⚠️ axe-core не знайдено за шляхом: {axe_path}")
+                return {}
+            
+            # Завантажуємо axe-core скрипт
+            await page.add_script_tag(path=axe_path)
+            
+            # Запускаємо axe-core аналіз
+            axe_results = await page.evaluate("""
+                () => {
+                    return new Promise((resolve) => {
+                        if (typeof axe !== 'undefined') {
+                            axe.run().then(results => {
+                                resolve(results);
+                            }).catch(error => {
+                                console.error('Axe-core error:', error);
+                                resolve({});
+                            });
+                        } else {
+                            console.error('Axe-core not loaded');
+                            resolve({});
+                        }
+                    });
+                }
+            """)
+            
+            print(f"✅ axe-core аналіз завершено:")
+            if axe_results:
+                violations_count = len(axe_results.get('violations', []))
+                passes_count = len(axe_results.get('passes', []))
+                print(f"   ❌ Порушення: {violations_count}")
+                print(f"   ✅ Пройдено: {passes_count}")
+                
+                # Детальний вивід всіх правил
+                print(f"\n📋 === ПОВНИЙ СПИСОК AXE-CORE РЕЗУЛЬТАТІВ ===")
+                
+                violations = axe_results.get('violations', [])
+                if violations:
+                    print(f"\n❌ ПОРУШЕННЯ ({len(violations)}):")
+                    for i, violation in enumerate(violations, 1):
+                        rule_id = violation.get('id', 'unknown')
+                        nodes_count = len(violation.get('nodes', []))
+                        impact = violation.get('impact', 'unknown')
+                        description = violation.get('description', 'No description')
+                        print(f"   {i}. {rule_id} ({impact}): {nodes_count} елементів")
+                        print(f"      {description}")
+                
+                passes = axe_results.get('passes', [])
+                if passes:
+                    print(f"\n✅ ПРОЙДЕНО ({len(passes)}):")
+                    for i, passed in enumerate(passes, 1):
+                        rule_id = passed.get('id', 'unknown')
+                        nodes_count = len(passed.get('nodes', []))
+                        print(f"   {i}. {rule_id}: {nodes_count} елементів")
+                
+                incomplete = axe_results.get('incomplete', [])
+                if incomplete:
+                    print(f"\n⚠️ НЕПОВНІ ПЕРЕВІРКИ ({len(incomplete)}):")
+                    for i, inc in enumerate(incomplete, 1):
+                        rule_id = inc.get('id', 'unknown')
+                        nodes_count = len(inc.get('nodes', []))
+                        print(f"   {i}. {rule_id}: {nodes_count} елементів")
+                
+                print(f"=== КІНЕЦЬ СПИСКУ AXE-CORE РЕЗУЛЬТАТІВ ===\n")
+            
+            return axe_results
+            
+        except Exception as e:
+            print(f"❌ Помилка при запуску axe-core: {str(e)}")
+            return {}

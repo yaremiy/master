@@ -68,49 +68,88 @@ class OperabilityMetrics:
     
     def calculate_structured_navigation_metric(self, page_data: Dict[str, Any]) -> float:
         """
-        Розрахунок метрики структурованої навігації (UAC-1.2.2-G)
+        Розрахунок метрики структурованої навігації (UAC-1.2.2-G) з використанням axe-core
         
-        Формула: X = 1 - B/C
-        
-        B = кількість пропущених рівнів заголовків
-        C = загальна кількість заголовків
+        Формула: X = A / B
+        A = кількість правильно структурованих заголовків (з axe-core passes)
+        B = загальна кількість заголовків (passes + violations)
         """
         
-        html_content = page_data.get('html_content', '')
+        axe_results = page_data.get('axe_results', {})
         
-        # Аналіз ієрархії заголовків
-        skipped_levels, total_headings = self._analyze_heading_structure(html_content)
+        print(f"\n📋 === ДЕТАЛЬНИЙ АНАЛІЗ СТРУКТУРИ ЗАГОЛОВКІВ ===")
         
-        if total_headings == 0:
-            return 1.0  # Немає заголовків - максимальна оцінка (немає помилок)
+        # Отримуємо результати для правил структури заголовків
+        heading_rules = ['heading-order', 'page-has-heading-one', 'empty-heading']
         
-        # Розрахунок за формулою X = 1 - B/C
-        return max(0, 1 - (skipped_levels / total_headings))
-    
-    
-    def _analyze_heading_structure(self, html_content: str) -> tuple:
-        """Аналіз структури заголовків"""
+        total_headings = 0
+        correct_headings = 0
         
-        soup = BeautifulSoup(html_content, 'html.parser')
-        headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        print(f"📋 Аналізуємо правила: {heading_rules}")
         
-        if not headings:
-            return 0, 0
-        
-        heading_levels = []
-        for heading in headings:
-            level = int(heading.name[1])
-            heading_levels.append(level)
-        
-        # Підрахунок пропущених рівнів
-        skipped_levels = 0
-        
-        for i in range(1, len(heading_levels)):
-            current_level = heading_levels[i]
-            previous_level = heading_levels[i-1]
+        for rule_id in heading_rules:
+            print(f"\n🔍 Правило: {rule_id}")
             
-            # Якщо перескочили рівень (наприклад, з h2 одразу на h4)
-            if current_level > previous_level + 1:
-                skipped_levels += current_level - previous_level - 1
+            # Підраховуємо правильні заголовки (passes)
+            passes = self._get_axe_rule_results(axe_results, 'passes', rule_id)
+            if passes:
+                passes_count = len(passes.get('nodes', []))
+                correct_headings += passes_count
+                total_headings += passes_count
+                print(f"   ✅ Passes: {passes_count} елементів")
+                
+                # Показуємо деталі перших кількох елементів
+                nodes = passes.get('nodes', [])[:3]  # Перші 3 елементи
+                for i, node in enumerate(nodes):
+                    target = node.get('target', ['невідомо'])
+                    html = node.get('html', 'немає HTML')[:80] + '...' if len(node.get('html', '')) > 80 else node.get('html', 'немає HTML')
+                    print(f"     {i+1}. Target: {target}")
+                    print(f"        HTML: {html}")
+            else:
+                print(f"   ✅ Passes: 0 елементів")
+            
+            # Підраховуємо проблемні заголовки (violations)
+            violations = self._get_axe_rule_results(axe_results, 'violations', rule_id)
+            if violations:
+                violations_count = len(violations.get('nodes', []))
+                total_headings += violations_count
+                print(f"   ❌ Violations: {violations_count} елементів")
+                print(f"   📝 Опис проблеми: {violations.get('description', 'немає опису')}")
+                
+                # Показуємо деталі перших кількох проблемних елементів
+                nodes = violations.get('nodes', [])[:3]  # Перші 3 елементи
+                for i, node in enumerate(nodes):
+                    target = node.get('target', ['невідомо'])
+                    html = node.get('html', 'немає HTML')[:80] + '...' if len(node.get('html', '')) > 80 else node.get('html', 'немає HTML')
+                    failure_summary = node.get('failureSummary', 'немає опису помилки')
+                    print(f"     {i+1}. Target: {target}")
+                    print(f"        HTML: {html}")
+                    print(f"        Проблема: {failure_summary}")
+                # correct_headings НЕ збільшуємо для violations
+            else:
+                print(f"   ❌ Violations: 0 елементів")
         
-        return skipped_levels, len(headings)
+        print(f"\n📊 ПІДСУМОК СТРУКТУРИ ЗАГОЛОВКІВ:")
+        print(f"   Правильних заголовків: {correct_headings}")
+        print(f"   Загальних заголовків: {total_headings}")
+        
+        # Якщо немає заголовків, повертаємо 1.0
+        if total_headings == 0:
+            print(f"   ⚠️ Немає заголовків для аналізу - повертаємо 1.0")
+            return 1.0
+        
+        score = correct_headings / total_headings
+        print(f"   🎯 Розрахунок: {correct_headings} / {total_headings} = {score:.3f}")
+        print(f"=== КІНЕЦЬ АНАЛІЗУ ЗАГОЛОВКІВ ===\n")
+        
+        return score
+    
+    def _get_axe_rule_results(self, axe_results: Dict[str, Any], result_type: str, rule_id: str) -> Dict[str, Any]:
+        """Отримання результатів конкретного правила axe-core"""
+        
+        results = axe_results.get(result_type, [])
+        for result in results:
+            if result.get('id') == rule_id:
+                return result
+        return {}
+    

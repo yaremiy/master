@@ -56,6 +56,13 @@ class URLRequest(BaseModel):
     url: HttpUrl
 
 
+class HTMLRequest(BaseModel):
+    """Модель запиту для аналізу HTML контенту"""
+    html_content: str
+    base_url: str = "http://localhost"  # Базовий URL для відносних посилань
+    title: str = "HTML Document"  # Заголовок документа
+
+
 class EvaluationResponse(BaseModel):
     """Модель відповіді з результатами аналізу"""
     url: str
@@ -126,12 +133,112 @@ async def read_root():
                 padding: 40px;
             }
             
+            .tabs {
+                display: flex;
+                margin-bottom: 0;
+                border-bottom: 2px solid #e9ecef;
+            }
+            
+            .tab-button {
+                background: #f8f9fa;
+                border: 2px solid #e9ecef;
+                border-bottom: none;
+                padding: 15px 25px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: 600;
+                color: #666;
+                border-radius: 10px 10px 0 0;
+                margin-right: 5px;
+                transition: all 0.3s;
+            }
+            
+            .tab-button:hover {
+                background: #e9ecef;
+                color: #333;
+            }
+            
+            .tab-button.active {
+                background: #3498db;
+                color: white;
+                border-color: #3498db;
+            }
+            
+            .tab-content {
+                display: none;
+            }
+            
+            .tab-content.active {
+                display: block;
+            }
+            
             .url-form {
                 background: #f8f9fa;
                 padding: 30px;
-                border-radius: 10px;
+                border-radius: 0 10px 10px 10px;
                 margin-bottom: 30px;
                 border: 2px solid #e9ecef;
+                border-top: none;
+            }
+            
+            textarea {
+                width: 100%;
+                padding: 15px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-size: 14px;
+                font-family: 'Courier New', monospace;
+                transition: border-color 0.3s;
+                resize: vertical;
+                min-height: 200px;
+            }
+            
+            textarea:focus {
+                outline: none;
+                border-color: #3498db;
+                box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+            }
+            
+            input[type="file"] {
+                width: 100%;
+                padding: 15px;
+                border: 2px dashed #ddd;
+                border-radius: 8px;
+                font-size: 16px;
+                background: #f8f9fa;
+                cursor: pointer;
+                transition: all 0.3s;
+            }
+            
+            input[type="file"]:hover {
+                border-color: #3498db;
+                background: #e3f2fd;
+            }
+            
+            input[type="file"]:focus {
+                outline: none;
+                border-color: #3498db;
+                box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+            }
+            
+            .file-drop-zone {
+                border: 2px dashed #ddd;
+                border-radius: 8px;
+                padding: 40px;
+                text-align: center;
+                background: #f8f9fa;
+                cursor: pointer;
+                transition: all 0.3s;
+            }
+            
+            .file-drop-zone:hover {
+                border-color: #3498db;
+                background: #e3f2fd;
+            }
+            
+            .file-drop-zone.dragover {
+                border-color: #27ae60;
+                background: #e8f5e8;
             }
             
             .form-group {
@@ -411,7 +518,14 @@ async def read_root():
             </div>
             
             <div class="main-content">
-                <form class="url-form" id="evaluationForm">
+                <!-- Вкладки для вибору типу аналізу -->
+                <div class="tabs">
+                    <button class="tab-button active" onclick="switchTab('url')">🌐 Аналіз URL</button>
+                    <button class="tab-button" onclick="switchTab('html')">📄 Аналіз HTML</button>
+                </div>
+                
+                <!-- Форма для аналізу URL -->
+                <form class="url-form tab-content active" id="urlForm" data-tab="url">
                     <div class="form-group">
                         <label for="url">URL адреса вебсайту для аналізу:</label>
                         <input 
@@ -427,8 +541,71 @@ async def read_root():
                         </small>
                     </div>
                     
-                    <button type="submit" class="btn" id="analyzeBtn">
-                        Проаналізувати доступність
+                    <button type="submit" class="btn" id="analyzeUrlBtn">
+                        Проаналізувати доступність URL
+                    </button>
+                </form>
+                
+                <!-- Форма для аналізу HTML -->
+                <form class="url-form tab-content" id="htmlForm" data-tab="html" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="htmlFile">Завантажити HTML файл:</label>
+                        <input 
+                            type="file" 
+                            id="htmlFile" 
+                            name="htmlFile" 
+                            accept=".html,.htm"
+                            required
+                            aria-describedby="html-help"
+                        >
+                        <small id="html-help" style="color: #666; margin-top: 5px; display: block;">
+                            Виберіть HTML файл (.html або .htm) для аналізу доступності
+                        </small>
+                        
+                        <!-- Попередній перегляд файлу -->
+                        <div id="filePreview" style="display: none; margin-top: 15px;">
+                            <h4>Попередній перегляд:</h4>
+                            <div id="fileInfo" style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px;"></div>
+                            <textarea 
+                                id="htmlContent" 
+                                readonly
+                                style="height: 200px; font-size: 12px;"
+                            ></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="baseUrl">Базовий URL (опціонально):</label>
+                        <input 
+                            type="url" 
+                            id="baseUrl" 
+                            name="baseUrl" 
+                            placeholder="http://localhost" 
+                            value="http://localhost"
+                            aria-describedby="base-url-help"
+                        >
+                        <small id="base-url-help" style="color: #666; margin-top: 5px; display: block;">
+                            Базовий URL для відносних посилань у HTML
+                        </small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="pageTitle">Заголовок сторінки (опціонально):</label>
+                        <input 
+                            type="text" 
+                            id="pageTitle" 
+                            name="pageTitle" 
+                            placeholder="HTML Document" 
+                            value="HTML Document"
+                            aria-describedby="title-help"
+                        >
+                        <small id="title-help" style="color: #666; margin-top: 5px; display: block;">
+                            Заголовок для ідентифікації документа в звіті
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn" id="analyzeHtmlBtn">
+                        Проаналізувати HTML контент
                     </button>
                 </form>
                 
@@ -447,50 +624,150 @@ async def read_root():
         </div>
         
         <script>
+            // Функція для перемикання вкладок
+            function switchTab(tabName) {
+                // Приховуємо всі вкладки
+                const tabContents = document.querySelectorAll('.tab-content');
+                tabContents.forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                
+                // Деактивуємо всі кнопки вкладок
+                const tabButtons = document.querySelectorAll('.tab-button');
+                tabButtons.forEach(button => {
+                    button.classList.remove('active');
+                });
+                
+                // Показуємо активну вкладку
+                const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
+                if (activeTab) {
+                    activeTab.classList.add('active');
+                }
+                
+                // Активуємо відповідну кнопку
+                event.target.classList.add('active');
+                
+                console.log('Перемкнуто на вкладку:', tabName);
+            }
+            
             // Додаємо обробник після завантаження DOM
             document.addEventListener('DOMContentLoaded', function() {
                 console.log('DOM завантажено, додаємо обробники подій');
                 
-                const form = document.getElementById('evaluationForm');
-                const urlInput = document.getElementById('url');
+                const urlForm = document.getElementById('urlForm');
+                const htmlForm = document.getElementById('htmlForm');
                 const loadingDiv = document.getElementById('loading');
                 const resultsDiv = document.getElementById('results');
-                const analyzeBtn = document.getElementById('analyzeBtn');
                 
-                if (!form) {
-                    console.error('Форма не знайдена!');
-                    return;
+                // Обробник для URL форми
+                if (urlForm) {
+                    urlForm.addEventListener('submit', async function(e) {
+                        e.preventDefault();
+                        console.log('URL форма відправлена');
+                        
+                        const urlInput = document.getElementById('url');
+                        const analyzeBtn = document.getElementById('analyzeUrlBtn');
+                        const url = urlInput.value.trim();
+                        
+                        if (!url) {
+                            alert('Будь ласка, введіть URL адресу');
+                            return;
+                        }
+                        
+                        await performAnalysis('/api/evaluate', { url: url }, analyzeBtn, 'Проаналізувати доступність URL');
+                    });
                 }
                 
-                form.addEventListener('submit', async function(e) {
-                    console.log('Форма відправлена');
-                    e.preventDefault(); // Запобігаємо стандартній відправці форми
-                    e.stopPropagation();
+                // Обробник для HTML форми
+                if (htmlForm) {
+                    const htmlFileInput = document.getElementById('htmlFile');
+                    const filePreview = document.getElementById('filePreview');
+                    const fileInfo = document.getElementById('fileInfo');
+                    const htmlContent = document.getElementById('htmlContent');
                     
-                    const url = urlInput.value.trim();
-                    console.log('URL для аналізу:', url);
+                    // Обробник зміни файлу
+                    htmlFileInput.addEventListener('change', function(e) {
+                        const file = e.target.files[0];
+                        if (file) {
+                            handleFileSelect(file);
+                        }
+                    });
                     
-                    if (!url) {
-                        alert('Будь ласка, введіть URL адресу');
-                        return;
+                    // Функція обробки вибраного файлу
+                    function handleFileSelect(file) {
+                        // Перевірка типу файлу
+                        if (!file.name.match(/\.(html|htm)$/i)) {
+                            alert('Будь ласка, виберіть HTML файл (.html або .htm)');
+                            return;
+                        }
+                        
+                        // Показуємо інформацію про файл
+                        fileInfo.innerHTML = `
+                            <strong>Файл:</strong> ${file.name}<br>
+                            <strong>Розмір:</strong> ${(file.size / 1024).toFixed(2)} KB<br>
+                            <strong>Тип:</strong> ${file.type || 'text/html'}
+                        `;
+                        
+                        // Читаємо вміст файлу
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            const content = e.target.result;
+                            htmlContent.value = content;
+                            filePreview.style.display = 'block';
+                            
+                            // Автоматично заповнюємо заголовок з HTML
+                            const titleMatch = content.match(/<title[^>]*>([^<]+)<\/title>/i);
+                            if (titleMatch) {
+                                document.getElementById('pageTitle').value = titleMatch[1].trim();
+                            }
+                        };
+                        reader.readAsText(file);
                     }
                     
+                    htmlForm.addEventListener('submit', async function(e) {
+                        e.preventDefault();
+                        console.log('HTML форма відправлена');
+                        
+                        const htmlContentInput = document.getElementById('htmlContent');
+                        const baseUrlInput = document.getElementById('baseUrl');
+                        const pageTitleInput = document.getElementById('pageTitle');
+                        const analyzeBtn = document.getElementById('analyzeHtmlBtn');
+                        
+                        const htmlContentValue = htmlContentInput.value.trim();
+                        const baseUrl = baseUrlInput.value.trim() || 'http://localhost';
+                        const title = pageTitleInput.value.trim() || 'HTML Document';
+                        
+                        if (!htmlContentValue) {
+                            alert('Будь ласка, завантажте HTML файл');
+                            return;
+                        }
+                        
+                        await performAnalysis('/api/evaluate-html', {
+                            html_content: htmlContentValue,
+                            base_url: baseUrl,
+                            title: title
+                        }, analyzeBtn, 'Проаналізувати HTML контент');
+                    });
+                }
+                
+                // Універсальна функція для виконання аналізу
+                async function performAnalysis(endpoint, data, button, originalButtonText) {
                     // Показуємо індикатор завантаження
                     loadingDiv.style.display = 'block';
                     resultsDiv.style.display = 'none';
-                    analyzeBtn.disabled = true;
-                    analyzeBtn.textContent = 'Аналізуємо...';
+                    button.disabled = true;
+                    button.textContent = 'Аналізуємо...';
                     
                     try {
-                        console.log('Відправляємо запит до API...');
+                        console.log('Відправляємо запит до API:', endpoint);
                         
-                        const response = await fetch('/api/evaluate', {
+                        const response = await fetch(endpoint, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'Accept': 'application/json'
                             },
-                            body: JSON.stringify({ url: url })
+                            body: JSON.stringify(data)
                         });
                         
                         console.log('Отримано відповідь:', response.status);
@@ -499,13 +776,13 @@ async def read_root():
                             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                         }
                         
-                        const data = await response.json();
-                        console.log('Дані отримано:', data);
+                        const result = await response.json();
+                        console.log('Дані отримано:', result);
                         
-                        if (data.status === 'success') {
-                            displayResults(data);
+                        if (result.status === 'success') {
+                            displayResults(result);
                         } else {
-                            displayError(data.error || 'Невідома помилка сервера');
+                            displayError(result.error || 'Невідома помилка сервера');
                         }
                         
                     } catch (error) {
@@ -513,16 +790,10 @@ async def read_root():
                         displayError('Помилка зєднання: ' + error.message);
                     } finally {
                         loadingDiv.style.display = 'none';
-                        analyzeBtn.disabled = false;
-                        analyzeBtn.textContent = 'Проаналізувати доступність';
+                        button.disabled = false;
+                        button.textContent = originalButtonText;
                     }
-                });
-                
-                // Додаємо обробник для кнопки
-                analyzeBtn.addEventListener('click', function(e) {
-                    console.log('Кнопка натиснута');
-                    // Форма буде оброблена через submit event
-                });
+                }
             });
             
             function displayResults(data) {
@@ -741,6 +1012,66 @@ async def evaluate_accessibility(request: URLRequest):
         raise
     except Exception as e:
         print(f"❌ Критична помилка сервера: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Помилка сервера: {str(e)}")
+
+
+@app.post("/api/evaluate-html", response_model=EvaluationResponse)
+async def evaluate_html_accessibility(request: HTMLRequest):
+    """
+    Аналіз доступності HTML контенту
+    
+    Args:
+        request: Запит з HTML контентом для аналізу
+        
+    Returns:
+        Результати аналізу доступності
+    """
+    
+    print(f"🔍 Отримано запит на аналіз HTML контенту (довжина: {len(request.html_content)} символів)")
+    
+    try:
+        # Виконання аналізу HTML
+        print(f"📊 Початок аналізу HTML контенту")
+        result = await evaluator.evaluate_html_content(
+            html_content=request.html_content,
+            base_url=request.base_url,
+            title=request.title
+        )
+        
+        if result['status'] == 'error':
+            print(f"❌ Помилка аналізу: {result['error']}")
+            raise HTTPException(status_code=400, detail=result['error'])
+        
+        # Додавання рівня якості
+        try:
+            from accessibility_evaluator.core.utils.calculator import ScoreCalculator
+        except ImportError:
+            from core.utils.calculator import ScoreCalculator
+        calculator = ScoreCalculator(evaluator.weights, evaluator.metric_weights)
+        
+        quality_level = calculator.get_quality_level(result['final_score'])
+        quality_description = calculator.get_quality_description(result['final_score'])
+        
+        print(f"✅ Аналіз HTML завершено. Скор: {result['final_score']:.3f}")
+        
+        return EvaluationResponse(
+            url=result['url'],
+            metrics=result['metrics'],
+            subscores=result['subscores'],
+            final_score=result['final_score'],
+            quality_level=quality_level,
+            quality_description=quality_description,
+            recommendations=result['recommendations'],
+            status=result['status']
+        )
+        
+    except HTTPException:
+        # Перепередаємо HTTP помилки як є
+        raise
+    except Exception as e:
+        print(f"❌ Критична помилка сервера при аналізі HTML: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Помилка сервера: {str(e)}")
