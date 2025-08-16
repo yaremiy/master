@@ -5,6 +5,7 @@
 from bs4 import BeautifulSoup
 from typing import Dict, Any, List
 import re
+import textstat
 
 
 class UnderstandabilityMetrics:
@@ -77,32 +78,63 @@ class UnderstandabilityMetrics:
         return list(set(instructions))  # Видаляємо дублікати
     
     def _assess_instruction_clarity(self, instruction_text: str) -> bool:
-        """Оцінка зрозумілості інструкції"""
+        """Оцінка зрозумілості інструкції з використанням textstat"""
         
-        # Базові критерії зрозумілості
-        word_count = len(instruction_text.split())
-        sentence_count = len(re.split(r'[.!?]+', instruction_text))
+        # Мінімальна довжина для аналізу
+        if len(instruction_text.strip()) < 5:
+            return False
+            
+        # Максимальна довжина (занадто довгі інструкції незрозумілі)
+        if len(instruction_text) > 200:
+            return False
         
-        # Критерії зрозумілості
-        is_clear = (
-            word_count <= 20 and      # Не занадто довгий
-            sentence_count <= 2 and   # Не більше 2 речень
-            len(instruction_text) >= 5 and  # Не занадто короткий
-            not self._contains_jargon(instruction_text)  # Без жаргону
-        )
-        
-        return is_clear
+        try:
+            # Flesch Reading Ease Score (0-100, чим вище - тим легше читати)
+            # 90-100: Дуже легко, 80-89: Легко, 70-79: Досить легко
+            # 60-69: Стандартно, 50-59: Досить важко, 30-49: Важко, 0-29: Дуже важко
+            flesch_score = textstat.flesch_reading_ease(instruction_text)
+            
+            # Flesch-Kincaid Grade Level (рівень освіти для розуміння)
+            # Чим менше число - тим простіше текст
+            grade_level = textstat.flesch_kincaid_grade(instruction_text)
+            
+            # Automated Readability Index
+            ari_score = textstat.automated_readability_index(instruction_text)
+            
+            # Критерії для зрозумілих інструкцій:
+            readability_criteria = (
+                flesch_score >= 60 and      # Стандартний рівень читабельності або вище
+                grade_level <= 8 and        # Не вище 8 класу освіти
+                ari_score <= 8              # ARI не вище 8 класу
+            )
+            
+            # Додаткові критерії
+            word_count = len(instruction_text.split())
+            sentence_count = len(re.split(r'[.!?]+', instruction_text.strip()))
+            
+            basic_criteria = (
+                word_count <= 25 and                           # Не більше 25 слів
+                sentence_count <= 3                            # Не більше 3 речень
+            )
+            
+            return readability_criteria and basic_criteria
+            
+        except Exception:
+            # Якщо textstat не може проаналізувати текст, використовуємо базові критерії
+            return self._basic_clarity_assessment(instruction_text)
     
-    def _contains_jargon(self, text: str) -> bool:
-        """Перевірка на наявність технічного жаргону"""
+    def _basic_clarity_assessment(self, instruction_text: str) -> bool:
+        """Базова оцінка зрозумілості як fallback"""
         
-        jargon_words = [
-            'api', 'json', 'xml', 'sql', 'regex', 'ajax',
-            'backend', 'frontend', 'middleware', 'endpoint'
-        ]
+        word_count = len(instruction_text.split())
+        sentence_count = len(re.split(r'[.!?]+', instruction_text.strip()))
         
-        text_lower = text.lower()
-        return any(word in text_lower for word in jargon_words)
+        return (
+            5 <= len(instruction_text) <= 150 and
+            word_count <= 20 and
+            sentence_count <= 2
+        )
+    
     
     def calculate_input_assistance_metric(self, page_data: Dict[str, Any]) -> float:
         """

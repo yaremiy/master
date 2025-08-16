@@ -70,65 +70,23 @@ class OperabilityMetrics:
         """
         Розрахунок метрики структурованої навігації (UAC-1.2.2-G)
         
-        Формули:
-        - Для глибоких рівнів: X = 0.5 × A + 0.5 × (1 - B/C)
-        - Для кореневих рівнів: X = 1 - B/C
+        Формула: X = 1 - B/C
         
-        A = наявність хлібних крихт (1 або 0)
         B = кількість пропущених рівнів заголовків
         C = загальна кількість заголовків
         """
         
         html_content = page_data.get('html_content', '')
-        page_depth = page_data.get('page_depth', 0)
-        
-        # Аналіз хлібних крихт
-        has_breadcrumb = self._has_breadcrumbs(html_content)
         
         # Аналіз ієрархії заголовків
         skipped_levels, total_headings = self._analyze_heading_structure(html_content)
         
         if total_headings == 0:
-            return 0.5  # Немає заголовків - середня оцінка
+            return 1.0  # Немає заголовків - максимальна оцінка (немає помилок)
         
-        heading_score = max(0, 1 - (skipped_levels / total_headings))
-        
-        # Вибір формули залежно від глибини сторінки
-        if page_depth > 2:  # Глибокий рівень
-            return 0.5 * (1 if has_breadcrumb else 0) + 0.5 * heading_score
-        else:  # Кореневий рівень
-            return heading_score
+        # Розрахунок за формулою X = 1 - B/C
+        return max(0, 1 - (skipped_levels / total_headings))
     
-    def _has_breadcrumbs(self, html_content: str) -> bool:
-        """Перевірка наявності хлібних крихт"""
-        
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Типові селектори для breadcrumbs
-        breadcrumb_selectors = [
-            '[aria-label*="breadcrumb" i]',
-            '[aria-label*="хлібні" i]',
-            '.breadcrumb',
-            '.breadcrumbs',
-            '.breadcrumb-nav',
-            'nav ol',
-            'nav ul',
-            '[role="navigation"] ol',
-            '[role="navigation"] ul'
-        ]
-        
-        for selector in breadcrumb_selectors:
-            elements = soup.select(selector)
-            for element in elements:
-                # Перевірка чи містить типові слова breadcrumb
-                text = element.get_text().lower()
-                if any(word in text for word in ['home', 'головна', '>', '/', '→', '»']):
-                    # Перевірка чи має достатньо елементів для breadcrumb
-                    links = element.find_all(['a', 'span'])
-                    if len(links) >= 2:
-                        return True
-        
-        return False
     
     def _analyze_heading_structure(self, html_content: str) -> tuple:
         """Аналіз структури заголовків"""

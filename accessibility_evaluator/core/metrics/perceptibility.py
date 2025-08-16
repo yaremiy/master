@@ -59,10 +59,6 @@ class PerceptibilityMetrics:
         
         alt_text = image_element.get('alt', '')
         
-        # Декоративні зображення
-        if image_element.get('is_decorative'):
-            return True  # Декоративні зображення повинні мати порожній alt
-        
         # Перевірка наявності та якості alt тексту
         if not alt_text:
             return False
@@ -85,7 +81,7 @@ class PerceptibilityMetrics:
                 return False
         
         # Alt текст повинен бути достатньо описовим
-        return len(alt_text.strip()) >= 3
+        return len(alt_text.strip()) >= 2
     
     async def calculate_contrast_metric(self, page_data: Dict[str, Any]) -> float:
         """
