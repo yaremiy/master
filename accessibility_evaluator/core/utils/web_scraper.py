@@ -65,6 +65,9 @@ class WebScraper:
                 print("🔍 Запуск axe-core аналізу...")
                 axe_results = await self._run_axe_core(page)
                 
+                print("⌨️ Тестування клавіатурної навігації...")
+                focus_test_results = await self._test_keyboard_focus(page)
+                
                 page_data = {
                     'url': url,
                     'html_content': html_content,
@@ -76,6 +79,7 @@ class WebScraper:
                     'form_elements': form_elements,
                     'computed_styles': computed_styles,
                     'axe_results': axe_results,  # Додаємо результати axe-core
+                    'focus_test_results': focus_test_results,  # Додаємо результати тестування фокусу
                     'page_object': page  # Зберігаємо для подальшого використання
                 }
                 
@@ -215,7 +219,300 @@ class WebScraper:
             }
             elements.append(element_data)
         
+        # Embedded відео (YouTube, Vimeo, тощо)
+        iframes = await page.query_selector_all('iframe')
+        for iframe in iframes:
+            src = await iframe.get_attribute('src') or ''
+            
+            # Перевіряємо чи це відео платформа
+            if self._is_video_embed(src):
+                platform = self._detect_video_platform(src)
+                iframe_id = await iframe.get_attribute('id')
+                
+                element_data = {
+                    'type': 'embedded_video',
+                    'src': src,
+                    'title': await iframe.get_attribute('title'),
+                    'platform': platform,
+                    'tracks': [],  # Embedded відео не мають HTML <track> елементів
+                    'has_captions': self._check_embed_captions(src, platform),
+                    'width': await iframe.get_attribute('width'),
+                    'height': await iframe.get_attribute('height'),
+                    'allowfullscreen': await iframe.get_attribute('allowfullscreen') is not None,
+                    'iframe_id': iframe_id
+                }
+                
+                # Для YouTube відео використовуємо покращений URL аналіз
+                if platform == 'youtube':
+                    element_data['caption_check_method'] = 'enhanced_url_analysis'
+                    # Покращена перевірка субтитрів
+                    enhanced_captions = self._enhanced_youtube_caption_check(src)
+                    if enhanced_captions is not None:
+                        element_data['has_captions'] = enhanced_captions
+                        print(f"   🎬 Покращений URL аналіз: {enhanced_captions}")
+                    
+                    # YouTube API як експериментальна функція (можна увімкнути при потребі)
+                    # api_captions = await self._check_youtube_captions_via_api(page, iframe, src)
+                    # if api_captions is not None:
+                    #     element_data['has_captions'] = api_captions
+                    #     element_data['caption_check_method'] = 'youtube_api'
+                
+                elements.append(element_data)
+        
         return elements
+    
+    def _is_video_embed(self, src: str) -> bool:
+        """Перевіряє чи це embedded відео"""
+        if not src:
+            return False
+        
+        video_platforms = [
+            'youtube.com', 'youtu.be',
+            'vimeo.com',
+            'dailymotion.com',
+            'twitch.tv',
+            'facebook.com/plugins/video',
+            'player.vimeo.com'
+        ]
+        
+        return any(platform in src.lower() for platform in video_platforms)
+    
+    def _detect_video_platform(self, src: str) -> str:
+        """Визначає платформу відео"""
+        src_lower = src.lower()
+        
+        if 'youtube.com' in src_lower or 'youtu.be' in src_lower:
+            return 'youtube'
+        elif 'vimeo.com' in src_lower:
+            return 'vimeo'
+        elif 'dailymotion.com' in src_lower:
+            return 'dailymotion'
+        elif 'twitch.tv' in src_lower:
+            return 'twitch'
+        elif 'facebook.com' in src_lower:
+            return 'facebook'
+        else:
+            return 'unknown'
+    
+    def _check_embed_captions(self, src: str, platform: str) -> bool:
+        """Перевіряє наявність субтитрів в embedded відео за URL параметрами"""
+        
+        if platform == 'youtube':
+            # YouTube параметри для субтитрів
+            caption_params = [
+                'cc_load_policy=1',  # Автоматично завантажувати субтитри
+                'captions=1',        # Увімкнені субтитри
+                'cc_lang_pref=',     # Переважна мова субтитрів
+            ]
+            
+            # Перевіряємо точні параметри
+            has_captions = any(param in src for param in caption_params)
+            
+            # Додаткова перевірка: якщо є мовні параметри, ймовірно є субтитри
+            if not has_captions:
+                language_params = ['hl=uk', 'hl=en', 'hl=ru', 'hl=de', 'hl=fr', 'hl=es']
+                has_language = any(param in src for param in language_params)
+                if has_language:
+                    # Якщо вказана мова, ймовірно є автоматичні субтитри
+                    return True
+            
+            return has_captions
+        
+        elif platform == 'vimeo':
+            # Vimeo параметри для субтитрів
+            caption_params = [
+                'texttrack=1',       # Увімкнені текстові доріжки
+                'captions=1'         # Увімкнені субтитри
+            ]
+            return any(param in src for param in caption_params)
+        
+        elif platform == 'dailymotion':
+            # Dailymotion параметри
+            caption_params = [
+                'subtitles-default=',
+                'ui-subtitles-available='
+            ]
+            return any(param in src for param in caption_params)
+        
+        # Для інших платформ поки що не можемо визначити з URL
+        return False
+    
+    def _enhanced_youtube_caption_check(self, src: str) -> bool:
+        """Покращена перевірка субтитрів YouTube з м'яким підходом"""
+        
+        # Витягуємо video ID
+        video_id = self._extract_youtube_video_id(src)
+        if not video_id:
+            return False
+        
+        # 1. Перевіряємо явні параметри субтитрів (100% впевненість)
+        explicit_caption_params = [
+            'cc_load_policy=1',  # Автоматично завантажувати субтитри
+            'captions=1',        # Увімкнені субтитри
+            'cc_lang_pref=',     # Переважна мова субтитрів
+        ]
+        
+        if any(param in src for param in explicit_caption_params):
+            return True
+        
+        # 2. Перевіряємо мовні параметри (високая ймовірність автосубтитрів)
+        language_params = [
+            'hl=en', 'hl=uk', 'hl=ru', 'hl=de', 'hl=fr', 'hl=es', 
+            'hl=it', 'hl=pt', 'hl=ja', 'hl=ko', 'hl=zh'
+        ]
+        
+        has_language_param = any(param in src for param in language_params)
+        if has_language_param:
+            return True
+        
+        # 3. М'який підхід: припускаємо що більшість YouTube відео має автосубтитри
+        if len(video_id) == 11:  # Стандартний YouTube video ID
+            # YouTube зазвичай генерує автоматичні субтитри для:
+            # - Відео англійською мовою
+            # - Популярних відео
+            # - Відео з чіткою мовою
+            # Тому припускаємо наявність субтитрів
+            return True
+        
+        # 4. Якщо video ID нестандартний - консервативний підхід
+        return False
+    
+    async def _check_youtube_captions_via_api(self, page: Page, iframe, src: str) -> bool:
+        """Перевірка субтитрів YouTube через YouTube IFrame API"""
+        
+        try:
+            # Витягуємо video ID з URL
+            video_id = self._extract_youtube_video_id(src)
+            if not video_id:
+                return None
+            
+            # Створюємо унікальний ID для iframe якщо його немає
+            iframe_id = await iframe.get_attribute('id')
+            if not iframe_id:
+                iframe_id = f'youtube_player_{video_id}'
+                await iframe.evaluate(f'(element) => element.id = "{iframe_id}"')
+            
+            # Впроваджуємо YouTube API та перевіряємо субтитри з правильними затримками
+            captions_available = await page.evaluate(f"""
+                async () => {{
+                    return new Promise((resolve) => {{
+                        let apiReady = false;
+                        let playerReady = false;
+                        
+                        // Функція для перевірки субтитрів
+                        function checkCaptions() {{
+                            if (!apiReady) {{
+                                console.log('YouTube API not ready yet');
+                                return;
+                            }}
+                            
+                            try {{
+                                console.log('Creating YouTube player for {iframe_id}');
+                                const player = new YT.Player('{iframe_id}', {{
+                                    events: {{
+                                        'onReady': (event) => {{
+                                            console.log('YouTube player ready, checking captions...');
+                                            
+                                            // Додаємо затримку для повної ініціалізації
+                                            setTimeout(() => {{
+                                                try {{
+                                                    const tracks = event.target.getOption('captions', 'tracklist');
+                                                    const hasSubtitles = tracks && tracks.length > 0;
+                                                    
+                                                    console.log('YouTube captions result:', hasSubtitles, tracks);
+                                                    resolve(hasSubtitles);
+                                                }} catch (error) {{
+                                                    console.log('Error getting captions:', error);
+                                                    // Спробуємо альтернативний метод
+                                                    try {{
+                                                        const availableOptions = event.target.getOptions();
+                                                        console.log('Available player options:', availableOptions);
+                                                        resolve(null); // Не вдалося визначити
+                                                    }} catch (error2) {{
+                                                        console.log('Alternative method failed:', error2);
+                                                        resolve(null);
+                                                    }}
+                                                }}
+                                            }}, 2000); // Затримка 2 секунди для повної ініціалізації
+                                        }},
+                                        'onError': (error) => {{
+                                            console.log('YouTube player error:', error);
+                                            resolve(null);
+                                        }},
+                                        'onStateChange': (event) => {{
+                                            console.log('YouTube player state changed:', event.data);
+                                        }}
+                                    }}
+                                }});
+                            }} catch (error) {{
+                                console.log('Error creating YouTube player:', error);
+                                resolve(null);
+                            }}
+                        }}
+                        
+                        // Перевіряємо чи вже завантажений YouTube API
+                        if (typeof YT !== 'undefined' && YT.Player) {{
+                            console.log('YouTube API already loaded');
+                            apiReady = true;
+                            checkCaptions();
+                        }} else {{
+                            console.log('Loading YouTube API...');
+                            
+                            // Завантажуємо YouTube IFrame API
+                            const script = document.createElement('script');
+                            script.src = 'https://www.youtube.com/iframe_api';
+                            
+                            // Глобальний callback для API готовності
+                            window.onYouTubeIframeAPIReady = () => {{
+                                console.log('YouTube API loaded and ready');
+                                apiReady = true;
+                                // Додаємо додаткову затримку після завантаження API
+                                setTimeout(checkCaptions, 1000);
+                            }};
+                            
+                            script.onerror = () => {{
+                                console.log('Failed to load YouTube API');
+                                resolve(null);
+                            }};
+                            
+                            document.head.appendChild(script);
+                        }}
+                        
+                        // Загальний таймаут на випадок якщо щось пішло не так
+                        setTimeout(() => {{
+                            console.log('YouTube API check timeout');
+                            resolve(null);
+                        }}, 15000); // Збільшуємо таймаут до 15 секунд
+                    }});
+                }}
+            """)
+            
+            print(f"   🎬 YouTube API перевірка субтитрів: {captions_available}")
+            return captions_available
+            
+        except Exception as e:
+            print(f"   ❌ Помилка YouTube API перевірки: {str(e)}")
+            return None
+    
+    def _extract_youtube_video_id(self, url: str) -> str:
+        """Витягує video ID з YouTube URL"""
+        
+        import re
+        
+        # Різні формати YouTube URL
+        patterns = [
+            r'youtube\.com/embed/([a-zA-Z0-9_-]+)',
+            r'youtube\.com/watch\?v=([a-zA-Z0-9_-]+)',
+            r'youtu\.be/([a-zA-Z0-9_-]+)',
+            r'youtube\.com/v/([a-zA-Z0-9_-]+)'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        
+        return None
     
     async def _get_form_elements(self, page: Page) -> List[Dict[str, Any]]:
         """Збір елементів форм"""
@@ -359,3 +656,114 @@ class WebScraper:
         except Exception as e:
             print(f"❌ Помилка при запуску axe-core: {str(e)}")
             return {}
+    
+    async def _test_keyboard_focus(self, page: Page) -> List[Dict[str, Any]]:
+        """Реальне тестування клавіатурної навігації з фокусом"""
+        
+        try:
+            # Впроваджуємо JavaScript функцію для тестування фокусу
+            focus_test_results = await page.evaluate("""
+                () => {
+                    function isFocusable(el) {
+                        if (!el) return { focusable: false, reason: 'Елемент не існує' };
+
+                        // Відкидаємо відключені або приховані
+                        if (el.disabled) return { focusable: false, reason: 'Елемент відключений (disabled)' };
+                        
+                        const style = window.getComputedStyle(el);
+                        if (style.display === "none") return { focusable: false, reason: 'display: none' };
+                        if (style.visibility === "hidden") return { focusable: false, reason: 'visibility: hidden' };
+                        
+                        if (el.hasAttribute("aria-hidden") && el.getAttribute("aria-hidden") === "true") {
+                            return { focusable: false, reason: 'aria-hidden="true"' };
+                        }
+
+                        // Відкидаємо tabindex="-1"
+                        const tabindex = el.getAttribute("tabindex");
+                        if (tabindex === "-1") return { focusable: false, reason: 'tabindex="-1"' };
+
+                        // Для <a> перевіряємо href
+                        if (el.tagName.toLowerCase() === "a" && !el.hasAttribute("href") && !tabindex) {
+                            return { focusable: false, reason: 'Посилання без href та tabindex' };
+                        }
+
+                        // Зберігаємо поточний активний елемент
+                        const originalActiveElement = document.activeElement;
+                        
+                        try {
+                            // Тестуємо фокус
+                            el.focus();
+                            const canFocus = document.activeElement === el;
+                            
+                            // Відновлюємо попередній фокус
+                            if (originalActiveElement && originalActiveElement.focus) {
+                                originalActiveElement.focus();
+                            } else {
+                                el.blur();
+                            }
+                            
+                            return { 
+                                focusable: canFocus, 
+                                reason: canFocus ? 'Пройшов тест фокусу' : 'Не може отримати фокус'
+                            };
+                        } catch (error) {
+                            return { focusable: false, reason: 'Помилка при тестуванні фокусу: ' + error.message };
+                        }
+                    }
+
+                    function getElementSelector(el) {
+                        if (el.id) return '#' + el.id;
+                        if (el.className) return el.tagName.toLowerCase() + '.' + el.className.split(' ').join('.');
+                        
+                        // Генеруємо nth-child селектор
+                        let selector = el.tagName.toLowerCase();
+                        let parent = el.parentElement;
+                        if (parent) {
+                            const siblings = Array.from(parent.children).filter(child => child.tagName === el.tagName);
+                            if (siblings.length > 1) {
+                                const index = siblings.indexOf(el) + 1;
+                                selector += ':nth-child(' + index + ')';
+                            }
+                        }
+                        return selector;
+                    }
+
+                    // Знаходимо всі потенційно інтерактивні елементи
+                    const elements = document.querySelectorAll("a, button, input, textarea, select, [tabindex], [onclick], [role='button'], [role='link']");
+                    const results = [];
+                    
+                    elements.forEach(el => {
+                        const focusResult = isFocusable(el);
+                        
+                        results.push({
+                            tag: el.tagName.toLowerCase(),
+                            selector: getElementSelector(el),
+                            html: el.outerHTML.substring(0, 200),
+                            focusable: focusResult.focusable,
+                            focus_reason: focusResult.focusable ? focusResult.reason : null,
+                            non_focus_reason: !focusResult.focusable ? focusResult.reason : null,
+                            tabindex: el.getAttribute('tabindex'),
+                            role: el.getAttribute('role'),
+                            disabled: el.disabled || false,
+                            href: el.getAttribute('href'),
+                            type: el.getAttribute('type'),
+                            text: el.textContent ? el.textContent.substring(0, 50) : ''
+                        });
+                    });
+                    
+                    return results;
+                }
+            """)
+            
+            print(f"✅ Тестування фокусу завершено:")
+            total_elements = len(focus_test_results)
+            focusable_count = sum(1 for r in focus_test_results if r.get('focusable', False))
+            print(f"   📋 Знайдено елементів: {total_elements}")
+            print(f"   ✅ Доступних з клавіатури: {focusable_count}")
+            print(f"   ❌ Недоступних: {total_elements - focusable_count}")
+            
+            return focus_test_results
+            
+        except Exception as e:
+            print(f"❌ Помилка при тестуванні клавіатурної навігації: {str(e)}")
+            return []

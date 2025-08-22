@@ -196,39 +196,92 @@ class PerceptibilityMetrics:
     
     def calculate_media_accessibility_metric(self, page_data: Dict[str, Any]) -> float:
         """
-        Розрахунок метрики доступності медіа (UAC-1.1.3-G)
+        Розрахунок метрики доступності медіа (UAC-1.1.3-G) включно з embedded відео
         
         Формула: X = A / B
         A = кількість відео із субтитрами або аудіоописами
-        B = загальна кількість відео
+        B = загальна кількість відео (нативні + embedded)
         """
         
         media_elements = page_data.get('media_elements', [])
-        video_elements = [elem for elem in media_elements if elem['type'] == 'video']
+        
+        # Збираємо всі відео: нативні HTML5 + embedded
+        video_elements = [elem for elem in media_elements if elem['type'] in ['video', 'embedded_video']]
+        
+        print(f"\n🎬 === ДЕТАЛЬНИЙ АНАЛІЗ ДОСТУПНОСТІ МЕДІА ===")
+        print(f"📋 Знайдено відео елементів: {len(video_elements)}")
         
         if not video_elements:
+            print("⚠️ Відео елементи не знайдено - повертаємо 1.0")
             return 1.0  # Немає відео = немає проблем
         
         accessible_videos = 0
         
-        for video in video_elements:
+        for i, video in enumerate(video_elements, 1):
+            video_type = video.get('type', 'unknown')
+            platform = video.get('platform', 'native')
+            src = video.get('src') or ''
+            
+            print(f"\n🔍 Відео {i}: {video_type}")
+            print(f"   Платформа: {platform}")
+            print(f"   URL: {src[:80]}..." if src and len(src) > 80 else f"   URL: {src}")
+            
             has_accessibility = False
+            accessibility_reasons = []
             
-            # Перевірка субтитрів
-            tracks = video.get('tracks', [])
-            for track in tracks:
-                if track.get('kind') in ['subtitles', 'captions']:
-                    has_accessibility = True
-                    break
-            
-            # Перевірка аудіоописів
-            if not has_accessibility:
+            if video_type == 'video':
+                # Нативне HTML5 відео
+                tracks = video.get('tracks', [])
+                print(f"   Треки: {len(tracks)}")
+                
+                # Перевірка субтитрів
                 for track in tracks:
-                    if track.get('kind') == 'descriptions':
+                    track_kind = track.get('kind', '')
+                    if track_kind in ['subtitles', 'captions']:
                         has_accessibility = True
+                        accessibility_reasons.append(f"Субтитри ({track_kind})")
                         break
+                
+                # Перевірка аудіоописів
+                if not has_accessibility:
+                    for track in tracks:
+                        if track.get('kind') == 'descriptions':
+                            has_accessibility = True
+                            accessibility_reasons.append("Аудіоописи")
+                            break
+            
+            elif video_type == 'embedded_video':
+                # Embedded відео (YouTube, Vimeo тощо)
+                has_captions = video.get('has_captions', False)
+                caption_check_method = video.get('caption_check_method', 'url_params')
+                
+                if has_captions:
+                    has_accessibility = True
+                    if caption_check_method == 'youtube_api':
+                        accessibility_reasons.append(f"Субтитри підтверджені YouTube API ({platform})")
+                    elif caption_check_method == 'enhanced_url_analysis':
+                        # Перевіряємо чи є явні параметри субтитрів
+                        if any(param in src for param in ['cc_load_policy=1', 'captions=1', 'cc_lang_pref=']):
+                            accessibility_reasons.append(f"Субтитри підтверджені параметрами URL ({platform})")
+                        elif any(param in src for param in ['hl=en', 'hl=uk', 'hl=ru', 'hl=de', 'hl=fr']):
+                            accessibility_reasons.append(f"Ймовірні автосубтитри за мовними параметрами ({platform})")
+                        else:
+                            accessibility_reasons.append(f"Ймовірні автоматичні субтитри YouTube (стандартне відео)")
+                    else:
+                        accessibility_reasons.append(f"Субтитри в URL ({platform})")
             
             if has_accessibility:
                 accessible_videos += 1
+                print(f"   ✅ Доступне: {', '.join(accessibility_reasons)}")
+            else:
+                print(f"   ❌ Недоступне: Відсутні субтитри та аудіоописи")
         
-        return accessible_videos / len(video_elements)
+        score = accessible_videos / len(video_elements)
+        
+        print(f"\n📊 ПІДСУМОК ДОСТУПНОСТІ МЕДІА:")
+        print(f"   Доступних відео: {accessible_videos}")
+        print(f"   Загальних відео: {len(video_elements)}")
+        print(f"   🎯 Розрахунок: {accessible_videos} / {len(video_elements)} = {score:.3f}")
+        print(f"=== КІНЕЦЬ АНАЛІЗУ МЕДІА ===\n")
+        
+        return score

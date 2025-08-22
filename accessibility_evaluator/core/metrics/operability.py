@@ -20,25 +20,77 @@ class OperabilityMetrics:
     
     async def calculate_keyboard_navigation_metric(self, page_data: Dict[str, Any]) -> float:
         """
-        Розрахунок метрики навігації з клавіатури (UAC-1.2.1-G)
+        Розрахунок метрики навігації з клавіатури (UAC-1.2.1-G) з реальним тестуванням фокусу
         
         Формула: X = A / B
         A = кількість інтерактивних елементів, доступних для керування клавіатурою
         B = загальна кількість інтерактивних елементів
         """
         
+        print(f"\n⌨️ === ДЕТАЛЬНИЙ АНАЛІЗ КЛАВІАТУРНОЇ НАВІГАЦІЇ (РЕАЛЬНЕ ТЕСТУВАННЯ) ===")
+        
+        # Отримуємо результати реального тестування фокусу з web_scraper
+        focus_test_results = page_data.get('focus_test_results', [])
+        
+        if not focus_test_results:
+            print("⚠️ Результати тестування фокусу недоступні, використовуємо fallback")
+            return await self._fallback_keyboard_analysis(page_data)
+        
+        total_elements = len(focus_test_results)
+        focusable_elements = sum(1 for result in focus_test_results if result.get('focusable', False))
+        
+        print(f"📋 Знайдено потенційно інтерактивних елементів: {total_elements}")
+        print(f"✅ Справді доступних з клавіатури: {focusable_elements}")
+        print(f"❌ Недоступних з клавіатури: {total_elements - focusable_elements}")
+        print()
+        
+        # Показуємо деталі доступних елементів
+        focusable_list = [r for r in focus_test_results if r.get('focusable', False)]
+        if focusable_list:
+            print(f"✅ Доступні елементи (показуємо перші 5):")
+            for i, result in enumerate(focusable_list[:5]):
+                print(f"   {i+1}. {result.get('tag', 'unknown')} - {result.get('selector', 'невідомо')}")
+                print(f"      HTML: {result.get('html', 'немає')[:80]}...")
+                print(f"      Причина доступності: {result.get('focus_reason', 'Пройшов тест фокусу')}")
+                print()
+        
+        # Показуємо деталі недоступних елементів
+        non_focusable_list = [r for r in focus_test_results if not r.get('focusable', False)]
+        if non_focusable_list:
+            print(f"❌ Недоступні елементи (показуємо перші 5):")
+            for i, result in enumerate(non_focusable_list[:5]):
+                print(f"   {i+1}. {result.get('tag', 'unknown')} - {result.get('selector', 'невідомо')}")
+                print(f"      HTML: {result.get('html', 'немає')[:80]}...")
+                print(f"      Причина недоступності: {result.get('non_focus_reason', 'Не пройшов тест фокусу')}")
+                print()
+        
+        if total_elements == 0:
+            print("⚠️ Інтерактивні елементи не знайдено - повертаємо 1.0")
+            score = 1.0
+        else:
+            score = focusable_elements / total_elements
+            print(f"🎯 Фінальний розрахунок: {focusable_elements} / {total_elements} = {score:.3f}")
+        
+        print(f"=== КІНЕЦЬ АНАЛІЗУ КЛАВІАТУРНОЇ НАВІГАЦІЇ ===\n")
+        return score
+    
+    async def _fallback_keyboard_analysis(self, page_data: Dict[str, Any]) -> float:
+        """Fallback аналіз якщо реальне тестування недоступне"""
+        
+        print("🔄 Використовуємо fallback аналіз...")
         interactive_elements = page_data.get('interactive_elements', [])
         
         if not interactive_elements:
             return 1.0
         
         accessible_count = 0
-        
         for element in interactive_elements:
             if self._is_keyboard_accessible(element):
                 accessible_count += 1
         
-        return accessible_count / len(interactive_elements)
+        score = accessible_count / len(interactive_elements)
+        print(f"📊 Fallback результат: {accessible_count}/{len(interactive_elements)} = {score:.3f}")
+        return score
     
     def _is_keyboard_accessible(self, element: Dict[str, Any]) -> bool:
         """Перевірка доступності елемента з клавіатури"""

@@ -29,6 +29,65 @@
     <div id="results" class="results"></div>
     
     <script>
+        function formatKeyboardDetails(keyboardData) {
+            if (!keyboardData) {
+                return '<p>❌ Дані про клавіатурну навігацію недоступні</p>';
+            }
+            
+            let html = `
+                <p><strong>📊 Загальна статистика:</strong></p>
+                <ul>
+                    <li>Доступних елементів: ${keyboardData.accessible_elements || 0}</li>
+                    <li>Загальних елементів: ${keyboardData.total_elements || 0}</li>
+                    <li>Пояснення скору: ${keyboardData.score_explanation || 'Немає даних'}</li>
+                </ul>
+            `;
+            
+            // Доступні елементи
+            if (keyboardData.accessible_elements_list && keyboardData.accessible_elements_list.length > 0) {
+                html += `
+                    <p><strong>✅ Доступні елементи (${keyboardData.accessible_elements_list.length}):</strong></p>
+                    <ul>
+                `;
+                keyboardData.accessible_elements_list.forEach((element, index) => {
+                    html += `
+                        <li>
+                            <strong>Селектор:</strong> ${element.selector || 'невідомо'}<br>
+                            <strong>Правило:</strong> ${element.rule || 'невідомо'}<br>
+                            <strong>Статус:</strong> ${element.status || 'Доступний з клавіатури'}<br>
+                            <strong>HTML:</strong> <code>${(element.html || '').substring(0, 100)}${element.html && element.html.length > 100 ? '...' : ''}</code>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+            }
+            
+            // Проблемні елементи
+            if (keyboardData.problematic_elements && keyboardData.problematic_elements.length > 0) {
+                html += `
+                    <p><strong>❌ Проблемні елементи (${keyboardData.problematic_elements.length}):</strong></p>
+                    <ul>
+                `;
+                keyboardData.problematic_elements.forEach((element, index) => {
+                    html += `
+                        <li>
+                            <strong>Селектор:</strong> ${element.selector || 'невідомо'}<br>
+                            <strong>Правило:</strong> ${element.rule || 'невідомо'}<br>
+                            <strong>Проблема:</strong> ${element.issue || 'Проблема з клавіатурною навігацією'}<br>
+                            <strong>HTML:</strong> <code>${(element.html || '').substring(0, 100)}${element.html && element.html.length > 100 ? '...' : ''}</code>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+            }
+            
+            if (keyboardData.accessible_elements === 0 && keyboardData.total_elements === 0) {
+                html += '<p>⚠️ Інтерактивні елементи для клавіатурної навігації не знайдено</p>';
+            }
+            
+            return html;
+        }
+        
         document.addEventListener('DOMContentLoaded', function() {
             console.log('✅ DOM завантажено');
             
@@ -91,6 +150,11 @@
                         <ul>
                             ${data.recommendations.map(rec => `<li>${rec.category}: ${rec.recommendation}</li>`).join('')}
                         </ul>
+                        
+                        <h4>Детальний аналіз клавіатурної навігації:</h4>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                            ${formatKeyboardDetails(data.detailed_analysis?.keyboard_navigation)}
+                        </div>
                     `;
                     resultsDiv.style.display = 'block';
                     

@@ -72,6 +72,7 @@ class EvaluationResponse(BaseModel):
     quality_level: str
     quality_description: str
     recommendations: list
+    detailed_analysis: Dict[str, Any] = {}  # Додаємо детальний аналіз
     status: str
 
 
@@ -239,6 +240,135 @@ async def read_root():
             .file-drop-zone.dragover {
                 border-color: #27ae60;
                 background: #e8f5e8;
+            }
+            
+            /* Accordion стилі */
+            .accordion {
+                margin-top: 10px;
+            }
+            
+            .accordion-header {
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+                padding: 15px;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                transition: background-color 0.3s;
+            }
+            
+            .accordion-header:hover {
+                background: #e9ecef;
+            }
+            
+            .accordion-header.active {
+                background: #e3f2fd;
+                border-color: #3498db;
+            }
+            
+            .accordion-toggle {
+                font-size: 18px;
+                font-weight: bold;
+                color: #666;
+                transition: transform 0.3s;
+            }
+            
+            .accordion-header.active .accordion-toggle {
+                transform: rotate(90deg);
+                color: #3498db;
+            }
+            
+            .accordion-content {
+                display: none;
+                border: 1px solid #dee2e6;
+                border-top: none;
+                border-radius: 0 0 5px 5px;
+                padding: 20px;
+                background: white;
+            }
+            
+            .accordion-content.active {
+                display: block;
+            }
+            
+            .element-list {
+                margin-top: 15px;
+            }
+            
+            .element-item {
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 5px;
+                padding: 15px;
+                margin-bottom: 10px;
+            }
+            
+            .element-item.problematic {
+                border-left: 4px solid #e74c3c;
+                background: #fdf2f2;
+            }
+            
+            .element-item.correct {
+                border-left: 4px solid #27ae60;
+                background: #f0f9f0;
+            }
+            
+            .element-selector {
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                color: #2c3e50;
+                font-weight: bold;
+                margin-bottom: 8px;
+            }
+            
+            .element-html {
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                background: #f1f3f4;
+                padding: 8px;
+                border-radius: 3px;
+                margin: 8px 0;
+                overflow-x: auto;
+                white-space: pre-wrap;
+                word-break: break-all;
+            }
+            
+            .element-issue {
+                color: #e74c3c;
+                font-size: 14px;
+                margin-top: 8px;
+            }
+            
+            .element-status {
+                color: #27ae60;
+                font-size: 14px;
+                margin-top: 8px;
+            }
+            
+            .contrast-info {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 10px;
+                margin-top: 10px;
+            }
+            
+            .contrast-detail {
+                background: #f8f9fa;
+                padding: 8px;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            
+            .color-swatch {
+                display: inline-block;
+                width: 20px;
+                height: 20px;
+                border-radius: 3px;
+                border: 1px solid #ccc;
+                margin-left: 5px;
+                vertical-align: middle;
             }
             
             .form-group {
@@ -827,6 +957,15 @@ async def read_root():
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.alt_text * 100}%; background: ${getScoreColor(data.metrics.alt_text)};"></div>
                                     </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз зображень</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateAltTextDetails(data.detailed_analysis?.alt_text)}
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="metric-detail-item">
                                     <span class="metric-detail-name">Контрастність тексту:</span>
@@ -834,12 +973,30 @@ async def read_root():
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.contrast * 100}%; background: ${getScoreColor(data.metrics.contrast)};"></div>
                                     </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз контрасту</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateContrastDetails(data.detailed_analysis?.contrast)}
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="metric-detail-item">
                                     <span class="metric-detail-name">Доступність медіа:</span>
                                     <span class="metric-detail-value">${(data.metrics.media_accessibility * 100).toFixed(1)}%</span>
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.media_accessibility * 100}%; background: ${getScoreColor(data.metrics.media_accessibility)};"></div>
+                                    </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз медіа елементів</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateMediaDetails(data.detailed_analysis?.media_accessibility)}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -857,12 +1014,30 @@ async def read_root():
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.keyboard_navigation * 100}%; background: ${getScoreColor(data.metrics.keyboard_navigation)};"></div>
                                     </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз клавіатурної навігації</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateKeyboardDetails(data.detailed_analysis?.keyboard_navigation)}
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="metric-detail-item">
                                     <span class="metric-detail-name">Структурована навігація:</span>
                                     <span class="metric-detail-value">${(data.metrics.structured_navigation * 100).toFixed(1)}%</span>
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.structured_navigation * 100}%; background: ${getScoreColor(data.metrics.structured_navigation)};"></div>
+                                    </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз заголовків</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateHeadingsDetails(data.detailed_analysis?.structured_navigation)}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -880,6 +1055,15 @@ async def read_root():
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.instruction_clarity * 100}%; background: ${getScoreColor(data.metrics.instruction_clarity)};"></div>
                                     </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз інструкцій</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateInstructionsDetails(data.detailed_analysis?.instruction_clarity)}
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="metric-detail-item">
                                     <span class="metric-detail-name">Допомога при введенні:</span>
@@ -887,12 +1071,30 @@ async def read_root():
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.input_assistance * 100}%; background: ${getScoreColor(data.metrics.input_assistance)};"></div>
                                     </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз полів вводу</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateInputAssistanceDetails(data.detailed_analysis?.input_assistance)}
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="metric-detail-item">
                                     <span class="metric-detail-name">Підтримка помилок:</span>
                                     <span class="metric-detail-value">${(data.metrics.error_support * 100).toFixed(1)}%</span>
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.error_support * 100}%; background: ${getScoreColor(data.metrics.error_support)};"></div>
+                                    </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз обробки помилок</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateErrorSupportDetails(data.detailed_analysis?.error_support)}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -909,6 +1111,15 @@ async def read_root():
                                     <span class="metric-detail-value">${(data.metrics.localization * 100).toFixed(1)}%</span>
                                     <div class="metric-detail-bar">
                                         <div class="metric-detail-fill" style="width: ${data.metrics.localization * 100}%; background: ${getScoreColor(data.metrics.localization)};"></div>
+                                    </div>
+                                    <div class="accordion">
+                                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                                            <span>Детальний аналіз локалізації</span>
+                                            <span class="accordion-toggle">▶</span>
+                                        </div>
+                                        <div class="accordion-content">
+                                            ${generateLocalizationDetails(data.detailed_analysis?.localization)}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -952,6 +1163,674 @@ async def read_root():
                 if (score >= 0.236) return '#f39c12';  // Задовільно - помаранчевий
                 if (score >= 0.146) return '#e74c3c';  // Погано - червоний
                 return '#95a5a6';  // Дуже погано - сірий
+            }
+            
+            // Функція для перемикання accordion
+            function toggleAccordion(header) {
+                const content = header.nextElementSibling;
+                const isActive = header.classList.contains('active');
+                
+                if (isActive) {
+                    header.classList.remove('active');
+                    content.classList.remove('active');
+                } else {
+                    header.classList.add('active');
+                    content.classList.add('active');
+                }
+            }
+            
+            // Генерація детального аналізу alt-text
+            function generateAltTextDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.problematic_images && details.problematic_images.length > 0) {
+                    html += `
+                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Проблемні зображення (${details.problematic_images.length}):</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.problematic_images.forEach(img => {
+                        html += `
+                            <div class="element-item problematic">
+                                <div class="element-selector">${img.selector}</div>
+                                <div class="element-html">${escapeHtml(img.html)}</div>
+                                <div class="element-issue"><strong>Проблема:</strong> ${img.issue}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                if (details.correct_images_list && details.correct_images_list.length > 0) {
+                    html += `
+                        <h4 style="color: #27ae60; margin-top: 20px;">✅ Правильні зображення (${details.correct_images_list.length}):</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.correct_images_list.forEach(img => {
+                        html += `
+                            <div class="element-item correct">
+                                <div class="element-selector">${img.selector}</div>
+                                <div class="element-html">${escapeHtml(img.html)}</div>
+                                <div class="element-status"><strong>Alt текст:</strong> "${img.alt_text}"</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу контрасту
+            function generateContrastDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.problematic_elements && details.problematic_elements.length > 0) {
+                    html += `
+                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Елементи з низьким контрастом (${details.problematic_elements.length}):</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.problematic_elements.forEach(elem => {
+                        html += `
+                            <div class="element-item problematic">
+                                <div class="element-selector">${elem.selector}</div>
+                                <div class="element-html">${escapeHtml(elem.html)}</div>
+                                <div class="contrast-info">
+                                    <div class="contrast-detail">
+                                        <strong>Поточний контраст:</strong> ${elem.contrast_ratio}
+                                    </div>
+                                    <div class="contrast-detail">
+                                        <strong>Необхідний:</strong> ${elem.required_ratio}
+                                    </div>
+                                    <div class="contrast-detail">
+                                        <strong>Колір тексту:</strong> ${elem.foreground}
+                                        <span class="color-swatch" style="background-color: ${elem.foreground}"></span>
+                                    </div>
+                                    <div class="contrast-detail">
+                                        <strong>Колір фону:</strong> ${elem.background}
+                                        <span class="color-swatch" style="background-color: ${elem.background}"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                if (details.correct_elements_list && details.correct_elements_list.length > 0) {
+                    html += `
+                        <h4 style="color: #27ae60; margin-top: 20px;">✅ Елементи з правильним контрастом (${details.correct_elements_list.length}):</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.correct_elements_list.slice(0, 5).forEach(elem => { // Показуємо тільки перші 5
+                        html += `
+                            <div class="element-item correct">
+                                <div class="element-selector">${elem.selector}</div>
+                                <div class="element-html">${escapeHtml(elem.html)}</div>
+                                <div class="element-status">${elem.status}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    if (details.correct_elements_list.length > 5) {
+                        html += `<p style="text-align: center; color: #666; margin-top: 10px;">... та ще ${details.correct_elements_list.length - 5} елементів</p>`;
+                    }
+                    
+                    html += '</div>';
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу заголовків
+            function generateHeadingsDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.problematic_headings && details.problematic_headings.length > 0) {
+                    html += `
+                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Проблемні заголовки (${details.problematic_headings.length}):</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.problematic_headings.forEach(heading => {
+                        html += `
+                            <div class="element-item problematic">
+                                <div class="element-selector">${heading.selector}</div>
+                                <div class="element-html">${escapeHtml(heading.html)}</div>
+                                <div class="element-issue"><strong>Правило:</strong> ${heading.rule}</div>
+                                <div class="element-issue"><strong>Проблема:</strong> ${heading.issue}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                if (details.correct_headings_list && details.correct_headings_list.length > 0) {
+                    html += `
+                        <h4 style="color: #27ae60; margin-top: 20px;">✅ Правильні заголовки (${details.correct_headings_list.length}):</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.correct_headings_list.forEach(heading => {
+                        html += `
+                            <div class="element-item correct">
+                                <div class="element-selector">${heading.selector}</div>
+                                <div class="element-html">${escapeHtml(heading.html)}</div>
+                                <div class="element-status"><strong>Правило:</strong> ${heading.rule} - ${heading.status}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу клавіатурної навігації
+            function generateKeyboardDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.total_elements > 0) {
+                    html += `
+                        <div style="margin-top: 15px;">
+                            <p><strong>Всього елементів:</strong> ${details.total_elements}</p>
+                            <p><strong>Доступних з клавіатури:</strong> ${details.accessible_elements}</p>
+                        </div>
+                    `;
+                    
+                    if (details.accessible_elements_list && details.accessible_elements_list.length > 0) {
+                        html += `
+                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Доступні елементи (${details.accessible_elements_list.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.accessible_elements_list.forEach(element => {
+                            html += `
+                                <div class="element-item correct">
+                                    <div class="element-selector">
+                                        <strong>Селектор:</strong> ${element.selector || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(element.html || 'HTML недоступний')}</div>
+                                    <div class="element-status">
+                                        <strong>Правило:</strong> ${element.rule || 'невідомо'}
+                                    </div>
+                                    <div class="element-status">
+                                        <strong>Статус:</strong> ${element.status || 'Доступний з клавіатури'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                    
+                    if (details.problematic_elements && details.problematic_elements.length > 0) {
+                        html += `
+                            <h4 style="color: #e74c3c; margin-top: 20px;">❌ Проблемні елементи (${details.problematic_elements.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.problematic_elements.forEach(element => {
+                            html += `
+                                <div class="element-item problematic">
+                                    <div class="element-selector">
+                                        <strong>Селектор:</strong> ${element.selector || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(element.html || 'HTML недоступний')}</div>
+                                    <div class="element-issue">
+                                        <strong>Правило:</strong> ${element.rule || 'невідомо'}
+                                    </div>
+                                    <div class="element-issue">
+                                        <strong>Проблема:</strong> ${element.issue || 'Проблема з клавіатурною навігацією'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                } else {
+                    html += `
+                        <p style="color: #666; margin-top: 15px;">
+                            Інтерактивні елементи для клавіатурної навігації не знайдено в axe-core результатах.
+                            Це може означати, що на сторінці немає елементів, які потребують клавіатурної навігації,
+                            або всі елементи є стандартними та доступними за замовчуванням.
+                        </p>
+                    `;
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу медіа елементів
+            function generateMediaDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.total_media > 0) {
+                    html += `
+                        <div style="margin-top: 15px;">
+                            <p><strong>Всього відео:</strong> ${details.total_media}</p>
+                            <p><strong>Доступних:</strong> ${details.accessible_media}</p>
+                        </div>
+                    `;
+                    
+                    if (details.accessible_media_list && details.accessible_media_list.length > 0) {
+                        html += `
+                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Доступні відео (${details.accessible_media_list.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.accessible_media_list.forEach(video => {
+                            html += `
+                                <div class="element-item correct">
+                                    <div class="element-selector">
+                                        <strong>Тип:</strong> ${video.type || 'невідомо'} (${video.platform || 'native'})
+                                    </div>
+                                    <div class="element-selector">
+                                        <strong>Назва:</strong> ${video.title || 'Без назви'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(video.html || 'HTML недоступний')}</div>
+                                    <div class="element-status">
+                                        <strong>URL:</strong> ${video.src ? video.src.substring(0, 80) + (video.src.length > 80 ? '...' : '') : 'Немає URL'}
+                                    </div>
+                                    <div class="element-status">
+                                        <strong>Статус:</strong> ${video.status || 'Доступне відео'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                    
+                    if (details.problematic_media && details.problematic_media.length > 0) {
+                        html += `
+                            <h4 style="color: #e74c3c; margin-top: 20px;">❌ Проблемні відео (${details.problematic_media.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.problematic_media.forEach(video => {
+                            html += `
+                                <div class="element-item problematic">
+                                    <div class="element-selector">
+                                        <strong>Тип:</strong> ${video.type || 'невідомо'} (${video.platform || 'native'})
+                                    </div>
+                                    <div class="element-selector">
+                                        <strong>Назва:</strong> ${video.title || 'Без назви'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(video.html || 'HTML недоступний')}</div>
+                                    <div class="element-issue">
+                                        <strong>URL:</strong> ${video.src ? video.src.substring(0, 80) + (video.src.length > 80 ? '...' : '') : 'Немає URL'}
+                                    </div>
+                                    <div class="element-issue">
+                                        <strong>Проблема:</strong> ${video.issue || 'Проблема з доступністю медіа'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                } else {
+                    html += `
+                        <p style="color: #666; margin-top: 15px;">
+                            Відео елементи не знайдено на сторінці. Аналіз доступності медіа включає перевірку 
+                            наявності субтитрів, аудіоописів та альтернативних форматів для відео та аудіо контенту.
+                        </p>
+                    `;
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу інструкцій
+            function generateInstructionsDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.total_instructions > 0) {
+                    html += `
+                        <div style="margin-top: 15px;">
+                            <p><strong>Всього інструкцій знайдено:</strong> ${details.total_instructions}</p>
+                            <p><strong>Зрозумілих інструкцій:</strong> ${details.clear_instructions}</p>
+                        </div>
+                    `;
+                    
+                    if (details.problematic_instructions && details.problematic_instructions.length > 0) {
+                        html += `
+                            <h4 style="color: #e74c3c; margin-top: 20px;">❌ Незрозумілі інструкції (${details.problematic_instructions.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.problematic_instructions.forEach(instruction => {
+                            html += `
+                                <div class="element-item problematic">
+                                    <div class="element-selector">
+                                        <strong>Тип:</strong> ${instruction.element_type || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">
+                                        <strong>Текст:</strong> "${escapeHtml(instruction.text || 'Текст недоступний')}"
+                                    </div>
+                                    <div class="element-issue">
+                                        <strong>Результат оцінки:</strong> ❌ Незрозуміло
+                                    </div>
+                                    <div class="element-issue">
+                                        <strong>Причина:</strong> ${instruction.issue || 'Складна для розуміння'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                    
+                    if (details.clear_instructions_list && details.clear_instructions_list.length > 0) {
+                        html += `
+                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Зрозумілі інструкції (${details.clear_instructions_list.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.clear_instructions_list.forEach(instruction => {
+                            html += `
+                                <div class="element-item correct">
+                                    <div class="element-selector">
+                                        <strong>Тип:</strong> ${instruction.element_type || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">
+                                        <strong>Текст:</strong> "${escapeHtml(instruction.text || 'Текст недоступний')}"
+                                    </div>
+                                    <div class="element-status">
+                                        <strong>Результат оцінки:</strong> ✅ Зрозуміло
+                                    </div>
+                                    <div class="element-status">
+                                        <strong>Статус:</strong> ${instruction.status || 'Зрозуміла інструкція'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                } else {
+                    html += `
+                        <p style="color: #666; margin-top: 15px;">
+                            Аналіз зрозумілості інструкцій використовує textstat бібліотеку для оцінки 
+                            читабельності тексту за шкалою Flesch Reading Ease та іншими метриками.
+                        </p>
+                    `;
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу полів вводу
+            function generateInputAssistanceDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.total_fields > 0) {
+                    html += `
+                        <div style="margin-top: 15px;">
+                            <p><strong>Всього полів:</strong> ${details.total_fields}</p>
+                            <p><strong>З допомогою:</strong> ${details.assisted_fields}</p>
+                        </div>
+                    `;
+                    
+                    if (details.problematic_fields && details.problematic_fields.length > 0) {
+                        html += `
+                            <h4 style="color: #e74c3c; margin-top: 20px;">❌ Поля без допомоги (${details.problematic_fields.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.problematic_fields.forEach(field => {
+                            html += `
+                                <div class="element-item problematic">
+                                    <div class="element-selector">
+                                        <strong>Селектор:</strong> ${field.selector || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(field.html || 'HTML недоступний')}</div>
+                                    <div class="element-issue">
+                                        <strong>Результат оцінки:</strong> ❌ Без допомоги
+                                    </div>
+                                    <div class="element-issue">
+                                        <strong>Проблема:</strong> ${field.issue || 'Відсутні підказки'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                    
+                    if (details.assisted_fields_list && details.assisted_fields_list.length > 0) {
+                        html += `
+                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Поля з допомогою (${details.assisted_fields_list.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.assisted_fields_list.forEach(field => {
+                            html += `
+                                <div class="element-item correct">
+                                    <div class="element-selector">
+                                        <strong>Селектор:</strong> ${field.selector || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(field.html || 'HTML недоступний')}</div>
+                                    <div class="element-status">
+                                        <strong>Результат оцінки:</strong> ✅ З допомогою
+                                    </div>
+                                    <div class="element-status">
+                                        <strong>Типи допомоги:</strong> ${field.assistance || 'Невідомо'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                } else {
+                    html += `
+                        <p style="color: #666; margin-top: 15px;">
+                            Аналіз допомоги при введенні перевіряє наявність placeholder текстів, 
+                            autocomplete атрибутів, aria-label та інших підказок для користувачів.
+                        </p>
+                    `;
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу обробки помилок
+            function generateErrorSupportDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.total_forms > 0) {
+                    html += `
+                        <div style="margin-top: 15px;">
+                            <p><strong>Всього форм:</strong> ${details.total_forms}</p>
+                            <p><strong>З обробкою помилок:</strong> ${details.supported_forms}</p>
+                        </div>
+                    `;
+                    
+                    if (details.supported_forms_list && details.supported_forms_list.length > 0) {
+                        html += `
+                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Форми з обробкою помилок (${details.supported_forms_list.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.supported_forms_list.forEach(form => {
+                            html += `
+                                <div class="element-item correct">
+                                    <div class="element-selector">
+                                        <strong>Селектор:</strong> ${form.selector || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(form.html || 'HTML недоступний')}</div>
+                                    <div class="element-status">
+                                        <strong>Результат оцінки:</strong> ✅ З обробкою помилок
+                                    </div>
+                                    <div class="element-status">
+                                        <strong>Механізми обробки:</strong> ${form.features || 'Невідомо'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                    
+                    if (details.problematic_forms && details.problematic_forms.length > 0) {
+                        html += `
+                            <h4 style="color: #e74c3c; margin-top: 20px;">❌ Форми без обробки помилок (${details.problematic_forms.length}):</h4>
+                            <div class="element-list">
+                        `;
+                        
+                        details.problematic_forms.forEach(form => {
+                            html += `
+                                <div class="element-item problematic">
+                                    <div class="element-selector">
+                                        <strong>Селектор:</strong> ${form.selector || 'невідомо'}
+                                    </div>
+                                    <div class="element-html">${escapeHtml(form.html || 'HTML недоступний')}</div>
+                                    <div class="element-issue">
+                                        <strong>Результат оцінки:</strong> ❌ Без обробки помилок
+                                    </div>
+                                    <div class="element-issue">
+                                        <strong>Проблема:</strong> ${form.issue || 'Відсутня обробка помилок'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                } else {
+                    html += `
+                        <p style="color: #666; margin-top: 15px;">
+                            Аналіз обробки помилок перевіряє наявність валідації форм, 
+                            повідомлень про помилки та aria-invalid атрибутів.
+                        </p>
+                    `;
+                }
+                
+                return html;
+            }
+            
+            // Генерація детального аналізу локалізації
+            function generateLocalizationDetails(details) {
+                if (!details) return '<p>Детальна інформація недоступна</p>';
+                
+                let html = `
+                    <div class="score-explanation">
+                        <strong>${details.score_explanation}</strong>
+                    </div>
+                `;
+                
+                if (details.detected_languages && details.detected_languages.length > 0) {
+                    html += `
+                        <h4 style="color: #27ae60; margin-top: 20px;">✅ Виявлені мови:</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.detected_languages.forEach(lang => {
+                        html += `
+                            <div class="element-item correct">
+                                <div class="element-status"><strong>Мова:</strong> ${lang.name} (${lang.code})</div>
+                                <div class="element-status"><strong>Вага в розрахунку:</strong> ${(lang.weight * 100).toFixed(1)}%</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                if (details.missing_languages && details.missing_languages.length > 0) {
+                    html += `
+                        <h4 style="color: #f39c12; margin-top: 20px;">⚠️ Рекомендовані мови:</h4>
+                        <div class="element-list">
+                    `;
+                    
+                    details.missing_languages.forEach(lang => {
+                        html += `
+                            <div class="element-item" style="border-left: 4px solid #f39c12; background: #fff8e1;">
+                                <div class="element-status"><strong>Мова:</strong> ${lang.name} (${lang.code})</div>
+                                <div class="element-status"><strong>Потенційна вага:</strong> ${(lang.weight * 100).toFixed(1)}%</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+                
+                if (!details.detected_languages || details.detected_languages.length === 0) {
+                    html += `
+                        <p style="color: #666; margin-top: 15px;">
+                            Аналіз локалізації перевіряє наявність lang атрибутів, language switcher, 
+                            hreflang посилань та автоматично визначає мову контенту.
+                        </p>
+                    `;
+                }
+                
+                return html;
+            }
+            
+            // Функція для екранування HTML
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
             }
         </script>
     </body>
@@ -1004,6 +1883,7 @@ async def evaluate_accessibility(request: URLRequest):
             quality_level=quality_level,
             quality_description=quality_description,
             recommendations=result['recommendations'],
+            detailed_analysis=result.get('detailed_analysis', {}),  # Додаємо детальний аналіз
             status=result['status']
         )
         
@@ -1064,6 +1944,7 @@ async def evaluate_html_accessibility(request: HTMLRequest):
             quality_level=quality_level,
             quality_description=quality_description,
             recommendations=result['recommendations'],
+            detailed_analysis=result.get('detailed_analysis', {}),  # Додаємо детальний аналіз
             status=result['status']
         )
         
