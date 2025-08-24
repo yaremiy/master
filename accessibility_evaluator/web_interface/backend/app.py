@@ -1687,7 +1687,7 @@ async def read_root():
                 return html;
             }
             
-            // Генерація детального аналізу обробки помилок
+            // Генерація детального аналізу підтримки помилок з новою структурою фаз
             function generateErrorSupportDetails(details) {
                 if (!details) return '<p>Детальна інформація недоступна</p>';
                 
@@ -1701,72 +1701,372 @@ async def read_root():
                     html += `
                         <div style="margin-top: 15px;">
                             <p><strong>Всього форм:</strong> ${details.total_forms}</p>
-                            <p><strong>З обробкою помилок:</strong> ${details.supported_forms}</p>
+                            <p><strong>Підтримуваних форм:</strong> ${details.supported_forms || 0}</p>
+                            <p><strong>Тип аналізу:</strong> ${details.analysis_type === 'hybrid' ? '🔄 Гібридний (статичний + динамічний)' : 
+                                                              details.analysis_type === 'static_only' ? '📊 Тільки статичний' : 
+                                                              '❓ Невідомий'}</p>
+                            ${details.dynamic_tests_count ? `<p><strong>Динамічних тестів:</strong> ${details.dynamic_tests_count}</p>` : ''}
                         </div>
                     `;
                     
+                    // Форми з хорошою підтримкою
                     if (details.supported_forms_list && details.supported_forms_list.length > 0) {
                         html += `
-                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Форми з обробкою помилок (${details.supported_forms_list.length}):</h4>
-                            <div class="element-list">
+                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Форми з хорошою підтримкою помилок (${details.supported_forms_list.length}):</h4>
                         `;
                         
-                        details.supported_forms_list.forEach(form => {
+                        details.supported_forms_list.forEach((form, index) => {
+                            const qualityScore = (typeof form.quality_score === 'number' && !isNaN(form.quality_score)) 
+                                ? (form.quality_score * 100).toFixed(1) 
+                                : '0.0';
+                            
                             html += `
-                                <div class="element-item correct">
-                                    <div class="element-selector">
-                                        <strong>Селектор:</strong> ${form.selector || 'невідомо'}
-                                    </div>
-                                    <div class="element-html">${escapeHtml(form.html || 'HTML недоступний')}</div>
-                                    <div class="element-status">
-                                        <strong>Результат оцінки:</strong> ✅ З обробкою помилок
-                                    </div>
-                                    <div class="element-status">
-                                        <strong>Механізми обробки:</strong> ${form.features || 'Невідомо'}
-                                    </div>
-                                </div>
+                                <div style="margin: 15px 0; padding: 15px; background: #e8f5e8; border-radius: 8px; border-left: 4px solid #27ae60;">
+                                    <h5 style="margin: 0 0 10px 0; color: #27ae60;">📋 ${form.selector || 'form'}</h5>
+                                    <p><strong>Загальна якість:</strong> ${qualityScore}%</p>
                             `;
+                            
+                            // Показуємо розбивку статичний/динамічний якщо доступно
+                            if (typeof form.static_quality === 'number' || typeof form.dynamic_quality === 'number') {
+                                html += `<div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">`;
+                                if (typeof form.static_quality === 'number') {
+                                    html += `<span style="margin-right: 15px;">📊 Статичний: ${(form.static_quality * 100).toFixed(1)}%</span>`;
+                                }
+                                if (typeof form.dynamic_quality === 'number') {
+                                    html += `<span>🧪 Динамічний: ${(form.dynamic_quality * 100).toFixed(1)}%</span>`;
+                                } else if (form.dynamic_error) {
+                                    html += `<span style="color: #e74c3c;">❌ Динамічний: ${form.dynamic_error}</span>`;
+                                }
+                                html += `</div>`;
+                            }
+                            
+                            html += `<p><strong>Функції:</strong> ${form.features || 'Немає даних'}</p>`;
+                            
+                            // Показуємо результати динамічного тестування
+                            if (form.dynamic_test_result && form.dynamic_test_result.systematic_analysis) {
+                                // Новий систематичний аналіз
+                                const testResult = form.dynamic_test_result;
+                                
+                                html += `
+                                    <div style="margin: 10px 0; padding: 15px; background: #e8f4fd; border-radius: 6px; border: 1px solid #bee5eb;">
+                                        <h6 style="margin: 0 0 10px 0; color: #0c5460;">🔬 Систематичний аналіз помилок:</h6>
+                                        
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                                            <div><strong>Полів протестовано:</strong> ${testResult.total_fields || 0}</div>
+                                            <div><strong>Полів з підтримкою:</strong> ${testResult.supported_fields || 0}</div>
+                                        </div>
+                                        
+                                        <h6 style="margin: 10px 0 5px 0; color: #0c5460;">📊 Статистика методів виявлення:</h6>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9em;">
+                                `;
+                                
+                                const detectionStats = testResult.detection_statistics || {};
+                                const statLabels = {
+                                    'html5_api': 'HTML5 API',
+                                    'aria_support': 'ARIA підтримка', 
+                                    'dom_changes': 'DOM зміни',
+                                    'css_states': 'CSS стани'
+                                };
+                                
+                                Object.entries(statLabels).forEach(([key, label]) => {
+                                    const count = detectionStats[key] || 0;
+                                    const total = testResult.total_fields || 1;
+                                    const percentage = ((count / total) * 100).toFixed(0);
+                                    const color = count > 0 ? '#28a745' : '#6c757d';
+                                    
+                                    html += `
+                                        <div style="color: ${color};">
+                                            <strong>${label}:</strong> ${count}/${total} (${percentage}%)
+                                        </div>
+                                    `;
+                                });
+                                
+                                html += `</div>`;
+                                
+                                // Детальний аналіз полів (скорочена версія для основного UI)
+                                const fieldResults = testResult.field_results || [];
+                                if (fieldResults.length > 0) {
+                                    html += `
+                                        <h6 style="margin: 15px 0 8px 0; color: #0c5460;">🔍 Аналіз полів (${fieldResults.length}):</h6>
+                                        <div style="max-height: 200px; overflow-y: auto;">
+                                    `;
+                                    
+                                    fieldResults.forEach((field, index) => {
+                                        const fieldName = field.selector || `field-${index + 1}`;
+                                        const fieldType = field.type || 'unknown';
+                                        const fieldQuality = (field.quality_score * 100).toFixed(0);
+                                        const isSupported = field.overall_support;
+                                        const statusIcon = isSupported ? '✅' : '❌';
+                                        
+                                        html += `
+                                            <div style="margin: 4px 0; padding: 6px; background: white; border-radius: 3px; font-size: 0.85em;">
+                                                ${statusIcon} <strong>${fieldName}</strong> (${fieldType}): ${fieldQuality}%
+                                            </div>
+                                        `;
+                                    });
+                                    
+                                    html += `</div>`;
+                                }
+                                
+                                html += `</div>`;
+                            } else if (form.dynamic_breakdown) {
+                                // Старий формат динамічного тестування
+                                html += `
+                                    <div style="margin: 10px 0; padding: 10px; background: #fff3cd; border-radius: 4px; border: 1px solid #ffeaa7;">
+                                        <h6 style="margin: 0 0 8px 0; color: #856404;">🧪 Результати динамічного тестування:</h6>
+                                `;
+                                
+                                Object.entries(form.dynamic_breakdown).forEach(([category, data]) => {
+                                    const score = (typeof data.score === 'number' && !isNaN(data.score)) ? (data.score * 100).toFixed(1) : '0.0';
+                                    html += `
+                                        <div style="margin: 4px 0; font-size: 0.9em;">
+                                            <strong>${category}:</strong> ${score}% - ${data.description || 'Немає опису'}
+                                        </div>
+                                    `;
+                                });
+                                
+                                html += `</div>`;
+                            }
+                            
+                            html += `
+                            `;
+                            
+                            // Деталі полів з фазовим аналізом
+                            if (form.field_details && form.field_details.length > 0) {
+                                html += `<h6 style="margin: 15px 0 10px 0;">Поля (${form.field_details.length}):</h6>`;
+                                
+                                form.field_details.forEach(field => {
+                                    const fieldQualityScore = (typeof field.quality_score === 'number' && !isNaN(field.quality_score)) 
+                                        ? (field.quality_score * 100).toFixed(1) 
+                                        : '0.0';
+                                    
+                                    html += `
+                                        <div style="margin: 10px 0; padding: 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
+                                            <h6 style="margin: 0 0 8px 0; color: #2c3e50;">🔍 ${field.name || 'unnamed'} (${field.type || 'unknown'})</h6>
+                                            <p style="margin: 5px 0;"><strong>Загальна якість:</strong> ${fieldQualityScore}%</p>
+                                    `;
+                                    
+                                    // Фазовий аналіз
+                                    const features = field.features;
+                                    if (features) {
+                                        ['phase1', 'phase2', 'phase3'].forEach(phaseName => {
+                                            const phase = features[phaseName];
+                                            if (phase) {
+                                                const phaseScore = (typeof phase.score === 'number' && !isNaN(phase.score)) 
+                                                    ? (phase.score * 100).toFixed(1) 
+                                                    : '0.0';
+                                                const maxScore = (typeof phase.max_score === 'number' && !isNaN(phase.max_score)) 
+                                                    ? (phase.max_score * 100).toFixed(1) 
+                                                    : '0.0';
+                                                
+                                                html += `
+                                                    <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                                                        <h6 style="margin: 0 0 5px 0; color: #495057;">📌 ${phase.title || phaseName}</h6>
+                                                        <p style="margin: 3px 0; font-size: 0.9em;"><strong>Скор:</strong> ${phaseScore}%/${maxScore}%</p>
+                                                        <p style="margin: 3px 0; font-size: 0.9em; color: #6c757d;">${phase.description || ''}</p>
+                                                `;
+                                                
+                                                // Деталі кожної функції
+                                                if (phase.details && phase.details.length > 0) {
+                                                    phase.details.forEach(detail => {
+                                                        const statusIcon = {
+                                                            'success': '✅',
+                                                            'warning': '⚠️',
+                                                            'error': '❌',
+                                                            'missing': '❌',
+                                                            'info': 'ℹ️'
+                                                        }[detail.status] || '❓';
+                                                        
+                                                        const detailScore = (typeof detail.score === 'number' && !isNaN(detail.score)) 
+                                                            ? (detail.score * 100).toFixed(1) 
+                                                            : '0.0';
+                                                        
+                                                        html += `
+                                                            <div style="margin: 5px 0; padding: 6px; background: white; border-radius: 3px; font-size: 0.85em;">
+                                                                <strong>${statusIcon} ${detail.feature || 'Unknown'}:</strong> ${detailScore}%<br>
+                                                                <span style="color: #6c757d;">${detail.description || ''}</span><br>
+                                                        `;
+                                                        
+                                                        if (detail.explanation) {
+                                                            html += `<span style="color: #007bff; font-style: italic;">💡 ${detail.explanation}</span><br>`;
+                                                        }
+                                                        
+                                                        html += `</div>`;
+                                                    });
+                                                }
+                                                
+                                                html += `</div>`;
+                                            }
+                                        });
+                                    }
+                                    
+                                    html += `</div>`;
+                                });
+                            }
+                            
+                            html += `</div>`;
                         });
-                        
-                        html += '</div>';
                     }
                     
+                    // Проблемні форми
                     if (details.problematic_forms && details.problematic_forms.length > 0) {
                         html += `
-                            <h4 style="color: #e74c3c; margin-top: 20px;">❌ Форми без обробки помилок (${details.problematic_forms.length}):</h4>
-                            <div class="element-list">
+                            <h4 style="color: #e74c3c; margin-top: 20px;">❌ Проблемні форми (${details.problematic_forms.length}):</h4>
                         `;
                         
-                        details.problematic_forms.forEach(form => {
+                        details.problematic_forms.forEach((form, index) => {
+                            const qualityScore = (typeof form.quality_score === 'number' && !isNaN(form.quality_score)) 
+                                ? (form.quality_score * 100).toFixed(1) 
+                                : '0.0';
+                            
                             html += `
-                                <div class="element-item problematic">
-                                    <div class="element-selector">
-                                        <strong>Селектор:</strong> ${form.selector || 'невідомо'}
-                                    </div>
-                                    <div class="element-html">${escapeHtml(form.html || 'HTML недоступний')}</div>
-                                    <div class="element-issue">
-                                        <strong>Результат оцінки:</strong> ❌ Без обробки помилок
-                                    </div>
-                                    <div class="element-issue">
-                                        <strong>Проблема:</strong> ${form.issue || 'Відсутня обробка помилок'}
-                                    </div>
-                                </div>
+                                <div style="margin: 15px 0; padding: 15px; background: #ffeaea; border-radius: 8px; border-left: 4px solid #e74c3c;">
+                                    <h5 style="margin: 0 0 10px 0; color: #e74c3c;">📋 ${form.selector || 'form'}</h5>
+                                    <p><strong>Загальна якість:</strong> ${qualityScore}%</p>
                             `;
+                            
+                            // Показуємо розбивку статичний/динамічний для проблемних форм
+                            if (typeof form.static_quality === 'number' || typeof form.dynamic_quality === 'number') {
+                                html += `<div style="margin: 8px 0; padding: 8px; background: #fff5f5; border-radius: 4px;">`;
+                                if (typeof form.static_quality === 'number') {
+                                    html += `<span style="margin-right: 15px;">📊 Статичний: ${(form.static_quality * 100).toFixed(1)}%</span>`;
+                                }
+                                if (typeof form.dynamic_quality === 'number') {
+                                    html += `<span>🧪 Динамічний: ${(form.dynamic_quality * 100).toFixed(1)}%</span>`;
+                                } else if (form.dynamic_error) {
+                                    html += `<span style="color: #e74c3c;">❌ Динамічний: ${form.dynamic_error}</span>`;
+                                }
+                                html += `</div>`;
+                            }
+                            
+                            html += `<p><strong>Проблеми:</strong> ${form.issue || 'Невідомі проблеми'}</p>`;
+                            
+                            // Показуємо результати динамічного тестування для проблемних форм
+                            if (form.dynamic_test_result && form.dynamic_test_result.systematic_analysis) {
+                                // Новий систематичний аналіз для проблемних форм
+                                const testResult = form.dynamic_test_result;
+                                
+                                html += `
+                                    <div style="margin: 10px 0; padding: 15px; background: #f8d7da; border-radius: 6px; border: 1px solid #f5c6cb;">
+                                        <h6 style="margin: 0 0 10px 0; color: #721c24;">🔬 Систематичний аналіз (проблемна форма):</h6>
+                                        
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                                            <div><strong>Полів протестовано:</strong> ${testResult.total_fields || 0}</div>
+                                            <div><strong>Полів з підтримкою:</strong> ${testResult.supported_fields || 0}</div>
+                                        </div>
+                                `;
+                                
+                                // Короткий огляд проблем
+                                const detectionStats = testResult.detection_statistics || {};
+                                const totalFields = testResult.total_fields || 1;
+                                const issues = [];
+                                
+                                if (detectionStats.html5_api === 0) issues.push("Відсутня HTML5 валідація");
+                                if (detectionStats.aria_support === 0) issues.push("Відсутня ARIA підтримка");
+                                if (detectionStats.dom_changes === 0) issues.push("Немає DOM повідомлень");
+                                if (detectionStats.css_states === 0) issues.push("Немає CSS індикаторів");
+                                
+                                if (issues.length > 0) {
+                                    html += `
+                                        <div style="margin: 10px 0; padding: 8px; background: #f5c6cb; border-radius: 4px;">
+                                            <strong>Основні проблеми:</strong><br>
+                                            ${issues.map(issue => `• ${issue}`).join('<br>')}
+                                        </div>
+                                    `;
+                                }
+                                
+                                html += `</div>`;
+                            } else if (form.dynamic_breakdown) {
+                                // Старий формат для проблемних форм
+                                html += `
+                                    <div style="margin: 10px 0; padding: 10px; background: #f8d7da; border-radius: 4px; border: 1px solid #f5c6cb;">
+                                        <h6 style="margin: 0 0 8px 0; color: #721c24;">🧪 Динамічне тестування:</h6>
+                                `;
+                                
+                                Object.entries(form.dynamic_breakdown).forEach(([category, data]) => {
+                                    const score = (typeof data.score === 'number' && !isNaN(data.score)) ? (data.score * 100).toFixed(1) : '0.0';
+                                    html += `
+                                        <div style="margin: 4px 0; font-size: 0.9em;">
+                                            <strong>${category}:</strong> ${score}% - ${data.description || 'Немає опису'}
+                                        </div>
+                                    `;
+                                });
+                                
+                                html += `</div>`;
+                            }
+                            
+                            html += `
+                            `;
+                            
+                            // Деталі полів для проблемних форм (скорочено)
+                            if (form.field_details && form.field_details.length > 0) {
+                                html += `<h6 style="margin: 15px 0 10px 0;">Поля (${form.field_details.length}):</h6>`;
+                                
+                                form.field_details.forEach(field => {
+                                    const fieldQualityScore = (typeof field.quality_score === 'number' && !isNaN(field.quality_score)) 
+                                        ? (field.quality_score * 100).toFixed(1) 
+                                        : '0.0';
+                                    
+                                    html += `
+                                        <div style="margin: 10px 0; padding: 12px; background: white; border-radius: 6px; border: 1px solid #ddd;">
+                                            <h6 style="margin: 0 0 8px 0; color: #2c3e50;">🔍 ${field.name || 'unnamed'} (${field.type || 'unknown'})</h6>
+                                            <p style="margin: 5px 0;"><strong>Якість:</strong> ${fieldQualityScore}%</p>
+                                    `;
+                                    
+                                    // Скорочений фазовий аналіз для проблемних форм
+                                    const features = field.features;
+                                    if (features) {
+                                        ['phase1', 'phase2', 'phase3'].forEach(phaseName => {
+                                            const phase = features[phaseName];
+                                            if (phase) {
+                                                const phaseScore = (typeof phase.score === 'number' && !isNaN(phase.score)) 
+                                                    ? (phase.score * 100).toFixed(1) 
+                                                    : '0.0';
+                                                
+                                                const statusColor = phase.score > 0.7 ? '#27ae60' : phase.score > 0.3 ? '#f39c12' : '#e74c3c';
+                                                
+                                                html += `
+                                                    <span style="display: inline-block; margin: 2px 5px 2px 0; padding: 3px 8px; background: ${statusColor}; color: white; border-radius: 12px; font-size: 0.8em;">
+                                                        ${phase.title}: ${phaseScore}%
+                                                    </span>
+                                                `;
+                                            }
+                                        });
+                                    }
+                                    
+                                    html += `</div>`;
+                                });
+                            }
+                            
+                            html += `</div>`;
                         });
-                        
-                        html += '</div>';
                     }
+                    
                 } else {
                     html += `
                         <p style="color: #666; margin-top: 15px;">
-                            Аналіз обробки помилок перевіряє наявність валідації форм, 
-                            повідомлень про помилки та aria-invalid атрибутів.
+                            Форми для валідації не знайдено на сторінці. Аналіз підтримки помилок включає 
+                            перевірку валідації форм, повідомлень про помилки та механізмів їх відображення.
                         </p>
                     `;
                 }
                 
+                // Додаємо пояснення критеріїв оцінки
+                html += `
+                    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
+                        <h5 style="margin-top: 0; color: #495057;">📋 Критерії оцінки підтримки помилок:</h5>
+                        <ul style="margin: 10px 0; padding-left: 20px; color: #6c757d;">
+                            <li><strong>Фаза 1 (40%):</strong> Базові функції - required/pattern валідація, aria-invalid, aria-describedby, role="alert"</li>
+                            <li><strong>Фаза 2 (30%):</strong> Якість повідомлень - зрозумілість, конструктивність, специфічність</li>
+                            <li><strong>Фаза 3 (30%):</strong> Динамічна валідація - live regions, JavaScript валідація</li>
+                        </ul>
+                        <p style="margin: 5px 0; color: #495057;"><strong>Поріг якості:</strong> ≥50% вважається хорошою підтримкою помилок</p>
+                    </div>
+                `;
+                
                 return html;
             }
+            
             
             // Генерація детального аналізу локалізації
             function generateLocalizationDetails(details) {

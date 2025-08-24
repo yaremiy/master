@@ -290,6 +290,371 @@ class UnderstandabilityMetrics:
             # Якщо textstat не працює - використовуємо базові критерії
             return self._basic_clarity_assessment(text)
     
+    def calculate_error_support_metric_enhanced(self, page_data: Dict[str, Any]) -> float:
+        """
+        Розрахунок метрики підтримки помилок (UAC-1.3.3-G) з покращеним аналізом
+        Використовує комбінацію статичного аналізу та динамічного тестування
+        
+        Формула: X = (static_score * 0.4) + (dynamic_score * 0.6)
+        static_score = статичний аналіз HTML структури
+        dynamic_score = результати динамічного тестування форм
+        """
+        
+        html_content = page_data.get('html_content', '')
+        form_error_test_results = page_data.get('form_error_test_results', [])
+        
+        print(f"\n🚨 === ДЕТАЛЬНИЙ АНАЛІЗ ПІДТРИМКИ ПОМИЛОК (ГІБРИДНИЙ) ===")
+        
+        # Витягуємо поля безпосередньо з HTML для більш точного контролю
+        if not html_content:
+            print("⚠️ HTML контент недоступний")
+            return 1.0
+        
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Знаходимо всі форми
+        forms = soup.find_all('form')
+        if not forms:
+            # Якщо немає форм, шукаємо окремі поля
+            individual_fields = soup.find_all(['input', 'textarea', 'select'])
+            if individual_fields:
+                print(f"📋 Знайдено {len(individual_fields)} полів без форм")
+                # Обробляємо як одну віртуальну форму
+                forms = [soup]  # Вся сторінка як одна форма
+            else:
+                print("⚠️ Поля для валідації не знайдено - повертаємо 1.0")
+                return 1.0
+        
+        print(f"📋 Знайдено форм: {len(forms)}")
+        print(f"🧪 Результати динамічного тестування: {len(form_error_test_results)} форм")
+        
+        # Статичний аналіз (40% ваги)
+        print(f"\n📊 СТАТИЧНИЙ АНАЛІЗ (40% ваги):")
+        static_total_quality = 0.0
+        
+        for i, form in enumerate(forms, 1):
+            print(f"\n🔍 Статичний аналіз форми {i}:")
+            
+            # Аналізуємо якість підтримки помилок для цієї форми
+            form_quality = self._analyze_form_error_support_quality(form, html_content)
+            static_total_quality += form_quality
+            
+            print(f"   🎯 Статична якість: {form_quality:.3f}")
+        
+        static_average = static_total_quality / len(forms)
+        print(f"📊 Середня статична якість: {static_average:.3f}")
+        
+        # Динамічний аналіз (60% ваги)
+        print(f"\n🧪 ДИНАМІЧНИЙ АНАЛІЗ (60% ваги):")
+        dynamic_average = 0.0
+        
+        if form_error_test_results:
+            dynamic_total_quality = 0.0
+            successful_tests = 0
+            
+            for i, test_result in enumerate(form_error_test_results, 1):
+                if 'error' in test_result:
+                    print(f"❌ Форма {i}: Помилка тестування - {test_result.get('error', 'Unknown')}")
+                    continue
+                
+                dynamic_quality = test_result.get('quality_score', 0.0)
+                dynamic_total_quality += dynamic_quality
+                successful_tests += 1
+                
+                print(f"✅ Форма {i}: Динамічна якість = {dynamic_quality:.3f}")
+                
+                # Детальний розбір динамічного тестування
+                breakdown = test_result.get('detailed_breakdown', {})
+                for category, data in breakdown.items():
+                    score = data.get('score', 0.0)
+                    description = data.get('description', 'Немає опису')
+                    print(f"   📋 {category}: {score:.3f} - {description}")
+            
+            if successful_tests > 0:
+                dynamic_average = dynamic_total_quality / successful_tests
+                print(f"📊 Середня динамічна якість: {dynamic_average:.3f} (з {successful_tests} успішних тестів)")
+            else:
+                print("⚠️ Жодного успішного динамічного тесту")
+                dynamic_average = 0.0
+        else:
+            print("⚠️ Динамічне тестування не виконувалося")
+            dynamic_average = 0.0
+        
+        # Комбінований скор
+        if dynamic_average > 0:
+            # Якщо є результати динамічного тестування, використовуємо гібридний підхід
+            combined_score = (static_average * 0.4) + (dynamic_average * 0.6)
+            print(f"\n🎯 ГІБРИДНИЙ СКОР:")
+            print(f"   Статичний: {static_average:.3f} × 0.4 = {static_average * 0.4:.3f}")
+            print(f"   Динамічний: {dynamic_average:.3f} × 0.6 = {dynamic_average * 0.6:.3f}")
+            print(f"   Комбінований: {combined_score:.3f}")
+        else:
+            # Якщо немає динамічного тестування, використовуємо тільки статичний аналіз
+            combined_score = static_average
+            print(f"\n⚠️ Використовується тільки статичний аналіз: {combined_score:.3f}")
+        
+        print(f"\n📊 ПІДСУМОК ПІДТРИМКИ ПОМИЛОК:")
+        print(f"   Фінальний скор: {combined_score:.3f}")
+        print(f"=== КІНЕЦЬ АНАЛІЗУ ПІДТРИМКИ ПОМИЛОК ===\n")
+        
+        return combined_score
+    
+    def _analyze_form_error_support_quality(self, form, html_content: str) -> float:
+        """Аналіз якості підтримки помилок для однієї форми"""
+        
+        # Знаходимо всі поля в формі
+        fields = form.find_all(['input', 'textarea', 'select'])
+        
+        if not fields:
+            print("   ⚠️ Поля не знайдено")
+            return 1.0  # Немає полів = немає проблем
+        
+        print(f"   📝 Знайдено полів: {len(fields)}")
+        
+        total_field_quality = 0.0
+        validatable_fields = 0
+        
+        for field in fields:
+            # Аналізуємо тільки поля що потребують валідації
+            if self._field_needs_validation(field):
+                validatable_fields += 1
+                field_quality = self._analyze_field_error_support(field, html_content)
+                total_field_quality += field_quality
+                
+                field_name = field.get('name') or field.get('id') or f"{field.name}[{field.get('type', 'unknown')}]"
+                print(f"     • {field_name}: {field_quality:.3f}")
+        
+        if validatable_fields == 0:
+            print("   ⚠️ Поля що потребують валідації не знайдено")
+            return 1.0  # Немає полів для валідації = немає проблем
+        
+        form_quality = total_field_quality / validatable_fields
+        print(f"   📊 Середня якість полів: {form_quality:.3f}")
+        
+        return form_quality
+    
+    def _field_needs_validation(self, field) -> bool:
+        """Перевіряє чи поле потребує валідації"""
+        
+        # Типи полів що потребують валідації
+        validation_types = ['text', 'email', 'password', 'tel', 'url', 'number', 'date', 'datetime-local']
+        
+        field_type = field.get('type', 'text')
+        
+        # textarea завжди потребує валідації
+        if field.name == 'textarea':
+            return True
+        
+        # input поля певних типів
+        if field.name == 'input' and field_type in validation_types:
+            return True
+        
+        # Поля з required або pattern завжди потребують валідації
+        if field.get('required') is not None or field.get('pattern'):
+            return True
+        
+        return False
+    
+    def _analyze_field_error_support(self, field, html_content: str) -> float:
+        """Детальний аналіз підтримки помилок для одного поля (Фази 1-3)"""
+        
+        quality_score = 0.0
+        
+        # ФАЗА 1: Базові покращення (0.4 максимум)
+        quality_score += self._phase1_basic_error_support(field, html_content)
+        
+        # ФАЗА 2: Якість повідомлень (0.3 максимум)  
+        quality_score += self._phase2_message_quality(field, html_content)
+        
+        # ФАЗА 3: Динамічна валідація (0.3 максимум)
+        quality_score += self._phase3_dynamic_validation(field, html_content)
+        
+        return min(quality_score, 1.0)  # Максимум 1.0
+    
+    def _phase1_basic_error_support(self, field, html_content: str) -> float:
+        """Фаза 1: Базові покращення - aria-invalid, aria-describedby, role=alert"""
+        
+        score = 0.0
+        
+        # 1. Валідація (required/pattern) - 0.1
+        if field.get('required') is not None or field.get('pattern'):
+            score += 0.1
+        
+        # 2. aria-invalid - 0.1
+        if field.get('aria-invalid'):
+            score += 0.1
+        
+        # 3. aria-describedby зв'язок - 0.1
+        if aria_describedby := field.get('aria-describedby'):
+            if self._check_aria_describedby_exists(aria_describedby, html_content):
+                score += 0.1
+        
+        # 4. role="alert" елементи - 0.1
+        if self._check_alert_elements_exist(html_content):
+            score += 0.1
+        
+        return score
+    
+    def _phase2_message_quality(self, field, html_content: str) -> float:
+        """Фаза 2: Якість повідомлень про помилки"""
+        
+        score = 0.0
+        
+        # Знаходимо пов'язані повідомлення про помилки
+        error_messages = self._find_error_messages_for_field(field, html_content)
+        
+        if not error_messages:
+            return 0.0
+        
+        # Оцінюємо якість кожного повідомлення
+        total_message_quality = 0.0
+        for message in error_messages:
+            message_quality = self._assess_error_message_quality(message)
+            total_message_quality += message_quality
+        
+        # Середня якість повідомлень (максимум 0.3)
+        average_quality = total_message_quality / len(error_messages)
+        score = average_quality * 0.3
+        
+        return score
+    
+    def _phase3_dynamic_validation(self, field, html_content: str) -> float:
+        """Фаза 3: Динамічна валідація та live regions"""
+        
+        score = 0.0
+        
+        # 1. Live regions (aria-live, role="status") - 0.15
+        if self._check_live_regions_exist(html_content):
+            score += 0.15
+        
+        # 2. JavaScript валідація (евристика) - 0.15
+        if self._detect_javascript_validation(field, html_content):
+            score += 0.15
+        
+        return score
+    
+    def _check_aria_describedby_exists(self, aria_describedby: str, html_content: str) -> bool:
+        """Перевіряє чи існує елемент з відповідним ID"""
+        
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # aria-describedby може містити кілька ID через пробіл
+        ids = aria_describedby.split()
+        
+        for element_id in ids:
+            if soup.find(id=element_id):
+                return True
+        
+        return False
+    
+    def _check_alert_elements_exist(self, html_content: str) -> bool:
+        """Перевіряє наявність role="alert" елементів"""
+        
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        alerts = soup.find_all(attrs={'role': 'alert'})
+        return len(alerts) > 0
+    
+    def _find_error_messages_for_field(self, field, html_content: str) -> list:
+        """Знаходить повідомлення про помилки для поля"""
+        
+        messages = []
+        
+        # 1. aria-describedby зв'язки
+        if aria_describedby := field.get('aria-describedby'):
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            ids = aria_describedby.split()
+            for element_id in ids:
+                element = soup.find(id=element_id)
+                if element:
+                    text = element.get_text().strip()
+                    if text:
+                        messages.append(text)
+        
+        # 2. Пошук поблизу поля (евристика)
+        # Можна додати пошук елементів з класами error, invalid тощо
+        
+        return messages
+    
+    def _assess_error_message_quality(self, message_text: str) -> float:
+        """Оцінка якості повідомлення про помилку (0.0-1.0)"""
+        
+        if not message_text or len(message_text.strip()) < 3:
+            return 0.0
+        
+        quality_score = 0.0
+        
+        # 1. Довжина (не занадто коротке/довге) - 0.3
+        if 10 <= len(message_text) <= 100:
+            quality_score += 0.3
+        elif 5 <= len(message_text) <= 150:
+            quality_score += 0.15
+        
+        # 2. Конструктивність (не тільки "Помилка!") - 0.4
+        constructive_words = ['введіть', 'виберіть', 'перевірте', 'має містити', 'формат', 'please', 'enter', 'select', 'check']
+        if any(word in message_text.lower() for word in constructive_words):
+            quality_score += 0.4
+        
+        # 3. Специфічність (конкретна проблема) - 0.3
+        specific_words = ['email', 'пароль', 'телефон', 'дата', 'символів', 'цифр', 'password', 'phone', 'date']
+        if any(word in message_text.lower() for word in specific_words):
+            quality_score += 0.3
+        
+        return min(quality_score, 1.0)
+    
+    def _check_live_regions_exist(self, html_content: str) -> bool:
+        """Перевіряє наявність live regions"""
+        
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # aria-live
+        live_elements = soup.find_all(attrs={'aria-live': True})
+        if live_elements:
+            return True
+        
+        # role="status"
+        status_elements = soup.find_all(attrs={'role': 'status'})
+        if status_elements:
+            return True
+        
+        return False
+    
+    def _detect_javascript_validation(self, field, html_content: str) -> bool:
+        """Евристичне виявлення JavaScript валідації"""
+        
+        # Пошук скриптів що можуть містити валідацію
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        scripts = soup.find_all('script')
+        validation_keywords = ['validate', 'validation', 'error', 'invalid', 'required']
+        
+        for script in scripts:
+            script_text = script.get_text().lower()
+            if any(keyword in script_text for keyword in validation_keywords):
+                return True
+        
+        # Перевірка event handlers
+        field_id = field.get('id')
+        field_name = field.get('name')
+        
+        if field_id or field_name:
+            # Пошук в скриптах посилань на це поле
+            for script in scripts:
+                script_text = script.get_text()
+                if field_id and field_id in script_text:
+                    return True
+                if field_name and field_name in script_text:
+                    return True
+        
+        return False
+    
     def _basic_clarity_assessment(self, instruction_text: str) -> bool:
         """Базова оцінка зрозумілості як fallback"""
         
@@ -399,4 +764,5 @@ class UnderstandabilityMetrics:
             if has_error_support:
                 forms_with_error_support += 1
         
-        return forms_with_error_support / len(form_elements)
+        # Використовуємо покращений метод
+        return self.calculate_error_support_metric_enhanced(page_data)

@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright, Page
 from bs4 import BeautifulSoup
 from typing import Dict, Any, List
 import asyncio
+from .form_tester import FormTester
 
 
 class WebScraper:
@@ -14,6 +15,7 @@ class WebScraper:
     def __init__(self):
         self.browser = None
         self.page = None
+        self.form_tester = FormTester()
     
     async def scrape_page(self, url: str) -> Dict[str, Any]:
         """
@@ -68,6 +70,9 @@ class WebScraper:
                 print("⌨️ Тестування клавіатурної навігації...")
                 focus_test_results = await self._test_keyboard_focus(page)
                 
+                print("🧪 Динамічне тестування форм...")
+                form_error_test_results = await self._test_form_error_behavior(page)
+                
                 page_data = {
                     'url': url,
                     'html_content': html_content,
@@ -80,6 +85,7 @@ class WebScraper:
                     'computed_styles': computed_styles,
                     'axe_results': axe_results,  # Додаємо результати axe-core
                     'focus_test_results': focus_test_results,  # Додаємо результати тестування фокусу
+                    'form_error_test_results': form_error_test_results,  # Додаємо результати динамічного тестування форм
                     'page_object': page  # Зберігаємо для подальшого використання
                 }
                 
@@ -560,6 +566,54 @@ class WebScraper:
             form_data.append(form_info)
         
         return form_data
+    
+    async def _test_form_error_behavior(self, page: Page) -> List[Dict[str, Any]]:
+        """Динамічне тестування поведінки форм при помилках"""
+        
+        print("🧪 Початок динамічного тестування форм...")
+        
+        # Знаходимо всі форми на сторінці
+        forms = await page.query_selector_all('form')
+        form_test_results = []
+        
+        for i, form in enumerate(forms):
+            try:
+                # Спробуємо знайти ID форми для більш точного селектора
+                form_id = await form.get_attribute('id')
+                if form_id:
+                    form_selector = f'#{form_id}'
+                else:
+                    form_selector = f'form:nth-child({i+1})'
+                
+                print(f"🔍 Тестування форми {i+1}: {form_selector}")
+                
+                # Виконуємо систематичне динамічне тестування
+                test_result = await self.form_tester.test_form_error_behavior_systematic(page, form_selector)
+                
+                # Додаємо метадані
+                test_result['form_index'] = i + 1
+                test_result['form_selector'] = form_selector
+                
+                form_test_results.append(test_result)
+                
+                print(f"✅ Форма {i+1} протестована. Якість: {test_result.get('quality_score', 0):.3f}")
+                
+            except Exception as e:
+                print(f"❌ Помилка тестування форми {i+1}: {str(e)}")
+                form_test_results.append({
+                    'form_index': i + 1,
+                    'form_selector': f'form:nth-of-type({i+1})',
+                    'error': str(e),
+                    'quality_score': 0.0
+                })
+        
+        if not form_test_results:
+            print("⚠️ Форми для тестування не знайдено")
+        else:
+            avg_quality = sum(result.get('quality_score', 0) for result in form_test_results) / len(form_test_results)
+            print(f"📊 Динамічне тестування завершено. Середня якість: {avg_quality:.3f}")
+        
+        return form_test_results
     
     async def _get_computed_styles(self, page: Page) -> Dict[str, Any]:
         """Збір computed styles для аналізу"""

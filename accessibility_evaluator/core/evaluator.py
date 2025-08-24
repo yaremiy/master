@@ -249,6 +249,9 @@ class AccessibilityEvaluator:
                 print("⌨️ Тестування клавіатурної навігації...")
                 focus_test_results = await self.web_scraper._test_keyboard_focus(page)
                 
+                print("🧪 Динамічне тестування форм...")
+                form_error_test_results = await self.web_scraper._test_form_error_behavior(page)
+                
                 page_data = {
                     'url': base_url,
                     'html_content': html_content,
@@ -260,7 +263,8 @@ class AccessibilityEvaluator:
                     'form_elements': form_elements,
                     'computed_styles': computed_styles,
                     'axe_results': axe_results,
-                    'focus_test_results': focus_test_results  # Додаємо результати тестування фокусу
+                    'focus_test_results': focus_test_results,  # Додаємо результати тестування фокусу
+                    'form_error_test_results': form_error_test_results  # Додаємо результати динамічного тестування форм
                 }
                 
                 print(f"✅ Збір даних з HTML завершено. Знайдено:")
@@ -920,74 +924,163 @@ class AccessibilityEvaluator:
         }
     
     def _analyze_error_support_details(self, page_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Детальний аналіз підтримки помилок"""
+        """Детальний аналіз підтримки помилок з використанням гібридної логіки (статичний + динамічний)"""
         
         html_content = page_data.get('html_content', '')
+        form_error_test_results = page_data.get('form_error_test_results', [])
         
-        # Витягуємо форми з HTML самостійно
+        if not html_content:
+            return {
+                'total_forms': 0,
+                'supported_forms': 0,
+                'problematic_forms': [],
+                'supported_forms_list': [],
+                'score_explanation': "HTML контент недоступний",
+                'analysis_type': 'error'
+            }
+        
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Шукаємо всі форми
-        form_elements = soup.find_all('form')
+        # Знаходимо всі форми
+        forms = soup.find_all('form')
+        if not forms:
+            # Якщо немає форм, шукаємо окремі поля
+            individual_fields = soup.find_all(['input', 'textarea', 'select'])
+            if individual_fields:
+                # Обробляємо як одну віртуальну форму
+                forms = [soup]  # Вся сторінка як одна форма
+            else:
+                return {
+                    'total_forms': 0,
+                    'supported_forms': 0,
+                    'problematic_forms': [],
+                    'supported_forms_list': [],
+                    'score_explanation': "Поля для валідації не знайдено",
+                    'analysis_type': 'no_forms'
+                }
         
-        forms = []
-        for form in form_elements:
-            # Аналізуємо форму на наявність механізмів обробки помилок
-            has_error_elements = bool(form.find_all(class_=lambda x: x and any(word in x.lower() for word in ['error', 'invalid', 'warning'])))
-            has_aria_invalid = bool(form.find_all(attrs={'aria-invalid': True}))
-            has_required_fields = bool(form.find_all(attrs={'required': True}))
-            has_validation = not form.get('novalidate', False)
-            has_role_alert = bool(form.find_all(attrs={'role': 'alert'}))
-            
-            form_info = {
-                'selector': 'form',
-                'html': str(form)[:200] + '...' if len(str(form)) > 200 else str(form),
-                'has_error_elements': has_error_elements,
-                'has_aria_invalid': has_aria_invalid,
-                'has_required_fields': has_required_fields,
-                'has_validation': has_validation,
-                'has_role_alert': has_role_alert
-            }
-            forms.append(form_info)
+        # Використовуємо UnderstandabilityMetrics для детального аналізу
+        from accessibility_evaluator.core.metrics.understandability import UnderstandabilityMetrics
+        understandability_metrics = UnderstandabilityMetrics()
         
         supported_forms = []
         problematic_forms = []
         
-        for form in forms:
-            error_support_features = []
+        # Визначаємо тип аналізу
+        has_dynamic_results = len(form_error_test_results) > 0
+        analysis_type = 'hybrid' if has_dynamic_results else 'static_only'
+        
+        for i, form in enumerate(forms, 1):
+            # Статичний аналіз форми
+            static_form_quality = understandability_metrics._analyze_form_error_support_quality(form, html_content)
             
-            # Перевіряємо різні типи підтримки помилок
-            if form.get('has_error_elements'):
-                error_support_features.append("Елементи для відображення помилок")
-            if form.get('has_aria_invalid'):
-                error_support_features.append("aria-invalid атрибути")
-            if form.get('has_required_fields'):
-                error_support_features.append("Обов'язкові поля (required)")
-            if form.get('has_validation'):
-                error_support_features.append("HTML5 валідація")
-            if form.get('has_role_alert'):
-                error_support_features.append("role='alert' для повідомлень")
+            # Динамічний аналіз (якщо доступний)
+            dynamic_test_result = None
+            dynamic_form_quality = 0.0
             
-            if error_support_features:
-                supported_forms.append({
-                    'selector': form.get('selector', 'невідомо'),
-                    'html': form.get('html', ''),
-                    'features': '; '.join(error_support_features)
-                })
+            if has_dynamic_results and i <= len(form_error_test_results):
+                dynamic_test_result = form_error_test_results[i-1]
+                if 'error' not in dynamic_test_result:
+                    dynamic_form_quality = dynamic_test_result.get('quality_score', 0.0)
+            
+            # Комбінований скор (якщо є динамічні результати)
+            if dynamic_test_result and 'error' not in dynamic_test_result:
+                combined_quality = (static_form_quality * 0.4) + (dynamic_form_quality * 0.6)
             else:
-                problematic_forms.append({
-                    'selector': form.get('selector', 'невідомо'),
-                    'html': form.get('html', ''),
-                    'issue': 'Відсутня обробка помилок (немає error елементів, aria-invalid, валідації)'
+                combined_quality = static_form_quality
+            
+            # Знаходимо всі поля в формі
+            fields = form.find_all(['input', 'textarea', 'select'])
+            validatable_fields = [field for field in fields if understandability_metrics._field_needs_validation(field)]
+            
+            if not validatable_fields:
+                # Форма без полів для валідації
+                supported_forms.append({
+                    'selector': f'form#{i}' if len(forms) > 1 else 'form',
+                    'html': str(form)[:200] + '...' if len(str(form)) > 200 else str(form),
+                    'quality_score': 1.0,
+                    'static_quality': 1.0,
+                    'dynamic_quality': 1.0 if dynamic_test_result else None,
+                    'features': 'Немає полів що потребують валідації',
+                    'field_details': [],
+                    'dynamic_test_result': dynamic_test_result
                 })
+                continue
+            
+            # Детальний аналіз полів
+            field_details = []
+            for field in validatable_fields:
+                field_quality = understandability_metrics._analyze_field_error_support(field, html_content)
+                
+                # Фазовий аналіз
+                phase1_score = understandability_metrics._phase1_basic_error_support(field, html_content)
+                phase2_score = understandability_metrics._phase2_message_quality(field, html_content)
+                phase3_score = understandability_metrics._phase3_dynamic_validation(field, html_content)
+                
+                field_name = field.get('name') or field.get('id') or f"{field.name}[{field.get('type', 'unknown')}]"
+                
+                field_detail = {
+                    'name': field_name,
+                    'type': field.get('type', field.name),
+                    'quality_score': field_quality,
+                    'phase1_score': phase1_score,
+                    'phase2_score': phase2_score,
+                    'phase3_score': phase3_score,
+                    'selector': self._generate_field_selector(field),
+                    'html': str(field)[:100] + '...' if len(str(field)) > 100 else str(field),
+                    'features': self._get_field_error_features_detailed(field, html_content, understandability_metrics)
+                }
+                
+                field_details.append(field_detail)
+            
+            # Створюємо детальну інформацію про форму
+            form_info = {
+                'selector': f'form#{i}' if len(forms) > 1 else 'form',
+                'html': str(form)[:200] + '...' if len(str(form)) > 200 else str(form),
+                'quality_score': combined_quality,
+                'static_quality': static_form_quality,
+                'dynamic_quality': dynamic_form_quality if dynamic_test_result and 'error' not in dynamic_test_result else None,
+                'field_details': field_details,
+                'dynamic_test_result': dynamic_test_result
+            }
+            
+            # Додаємо інформацію про динамічне тестування
+            if dynamic_test_result:
+                if 'error' in dynamic_test_result:
+                    form_info['dynamic_error'] = dynamic_test_result['error']
+                else:
+                    # Зберігаємо повний результат систематичного аналізу
+                    form_info['dynamic_test_result'] = dynamic_test_result
+                    
+                    # Зберігаємо старий формат для сумісності
+                    if dynamic_test_result.get('systematic_analysis'):
+                        # Новий систематичний аналіз
+                        form_info['dynamic_features'] = f"Систематичний аналіз: {dynamic_test_result.get('supported_fields', 0)}/{dynamic_test_result.get('total_fields', 0)} полів"
+                    else:
+                        # Старий формат
+                        form_info['dynamic_breakdown'] = dynamic_test_result.get('detailed_breakdown', {})
+                        form_info['dynamic_features'] = self._summarize_dynamic_features(dynamic_test_result)
+            
+            # Визначаємо чи форма підтримується
+            if combined_quality >= 0.5:  # Поріг для "підтримується"
+                features_summary = self._summarize_hybrid_form_features(field_details, dynamic_test_result)
+                form_info['features'] = features_summary
+                supported_forms.append(form_info)
+            else:
+                issues = self._identify_hybrid_form_issues(field_details, combined_quality, dynamic_test_result)
+                form_info['issue'] = '; '.join(issues)
+                problematic_forms.append(form_info)
         
         total_forms = len(forms)
         supported_count = len(supported_forms)
         
         if total_forms > 0:
             score = supported_count / total_forms
-            score_explanation = f"Скор: {supported_count}/{total_forms} = {score:.3f}"
+            if analysis_type == 'hybrid':
+                score_explanation = f"Гібридний скор: {supported_count}/{total_forms} = {score:.3f} (статичний + динамічний аналіз)"
+            else:
+                score_explanation = f"Статичний скор: {supported_count}/{total_forms} = {score:.3f} (динамічне тестування недоступне)"
         else:
             score_explanation = "Форми не знайдено"
         
@@ -996,7 +1089,9 @@ class AccessibilityEvaluator:
             'supported_forms': supported_count,
             'problematic_forms': problematic_forms,
             'supported_forms_list': supported_forms,
-            'score_explanation': score_explanation
+            'score_explanation': score_explanation,
+            'analysis_type': analysis_type,
+            'dynamic_tests_count': len(form_error_test_results)
         }
     
     def _analyze_media_details(self, page_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1084,6 +1179,602 @@ class AccessibilityEvaluator:
             details['score_explanation'] = "Відео елементи не знайдено"
         
         return details
+    
+    def _analyze_form_fields_error_support(self, form, html_content: str) -> list:
+        """Аналіз полів форми для детального звіту"""
+        
+        fields = form.find_all(['input', 'textarea', 'select'])
+        field_details = []
+        
+        from accessibility_evaluator.core.metrics.understandability import UnderstandabilityMetrics
+        metrics = UnderstandabilityMetrics()
+        
+        for field in fields:
+            if metrics._field_needs_validation(field):
+                field_quality = metrics._analyze_field_error_support(field, html_content)
+                
+                field_info = {
+                    'name': field.get('name') or field.get('id') or 'unnamed',
+                    'type': field.get('type', field.name),
+                    'quality_score': field_quality,
+                    'selector': self._generate_field_selector(field),
+                    'html': str(field)[:100] + '...' if len(str(field)) > 100 else str(field),
+                    'error_support_features': self._get_field_error_features(field, html_content)
+                }
+                
+                field_details.append(field_info)
+        
+        return field_details
+    
+    def _generate_field_selector(self, field) -> str:
+        """Генерує CSS селектор для поля"""
+        
+        if field_id := field.get('id'):
+            return f'#{field_id}'
+        elif field_name := field.get('name'):
+            return f'[name="{field_name}"]'
+        else:
+            field_type = field.get('type', field.name)
+            return f'{field.name}[type="{field_type}"]'
+    
+    def _get_field_error_features(self, field, html_content: str) -> dict:
+        """Отримує інформацію про функції підтримки помилок поля"""
+        
+        features = {
+            'validation': [],
+            'error_messages': [],
+            'accessibility': [],
+            'dynamic': []
+        }
+        
+        # Валідація
+        if field.get('required') is not None:
+            features['validation'].append('required')
+        if field.get('pattern'):
+            features['validation'].append(f'pattern: {field.get("pattern")}')
+        
+        # Accessibility
+        if field.get('aria-invalid'):
+            features['accessibility'].append(f'aria-invalid: {field.get("aria-invalid")}')
+        if field.get('aria-describedby'):
+            features['accessibility'].append(f'aria-describedby: {field.get("aria-describedby")}')
+        
+        # Error messages
+        from accessibility_evaluator.core.metrics.understandability import UnderstandabilityMetrics
+        metrics = UnderstandabilityMetrics()
+        error_messages = metrics._find_error_messages_for_field(field, html_content)
+        features['error_messages'] = error_messages
+        
+        # Dynamic features
+        if metrics._detect_javascript_validation(field, html_content):
+            features['dynamic'].append('JavaScript validation detected')
+        if metrics._check_live_regions_exist(html_content):
+            features['dynamic'].append('Live regions present')
+        
+        return features
+    
+    def _get_field_error_features_detailed(self, field, html_content: str, understandability_metrics) -> Dict[str, Any]:
+        """Отримує детальну інформацію про функції підтримки помилок поля з фазовим аналізом для UI"""
+        
+        # Розраховуємо фактичні скори
+        phase1_score = understandability_metrics._phase1_basic_error_support(field, html_content)
+        phase2_score = understandability_metrics._phase2_message_quality(field, html_content)
+        phase3_score = understandability_metrics._phase3_dynamic_validation(field, html_content)
+        
+        # Детальний аналіз кожної фази
+        phase1_details = self._analyze_phase1_details(field, html_content, understandability_metrics)
+        phase2_details = self._analyze_phase2_details(field, html_content, understandability_metrics)
+        phase3_details = self._analyze_phase3_details(field, html_content, understandability_metrics)
+        
+        return {
+            'phase1': {
+                'score': phase1_score,
+                'max_score': 0.4,
+                'title': 'Фаза 1: Базові покращення',
+                'description': 'Основні атрибути доступності та валідації',
+                'details': phase1_details,
+                'explanation': self._get_phase1_explanation()
+            },
+            'phase2': {
+                'score': phase2_score,
+                'max_score': 0.3,
+                'title': 'Фаза 2: Якість повідомлень',
+                'description': 'Зрозумілі та корисні повідомлення про помилки',
+                'details': phase2_details,
+                'explanation': self._get_phase2_explanation()
+            },
+            'phase3': {
+                'score': phase3_score,
+                'max_score': 0.3,
+                'title': 'Фаза 3: Динамічна валідація',
+                'description': 'Інтерактивна валідація та live оновлення',
+                'details': phase3_details,
+                'explanation': self._get_phase3_explanation()
+            }
+        }
+    
+    def _analyze_phase1_details(self, field, html_content: str, understandability_metrics) -> List[Dict[str, Any]]:
+        """Детальний аналіз Фази 1 для UI"""
+        
+        details = []
+        
+        # 1. Валідація (required/pattern) - 0.1
+        has_required = field.get('required') is not None
+        has_pattern = field.get('pattern') is not None
+        
+        if has_required or has_pattern:
+            validation_types = []
+            if has_required:
+                validation_types.append('required')
+            if has_pattern:
+                validation_types.append(f'pattern="{field.get("pattern")}"')
+            
+            details.append({
+                'feature': 'Валідація',
+                'status': 'success',
+                'score': 0.1,
+                'description': f'HTML5 валідація: {", ".join(validation_types)}',
+                'explanation': 'Браузер автоматично перевіряє правильність введених даних'
+            })
+        else:
+            details.append({
+                'feature': 'Валідація',
+                'status': 'missing',
+                'score': 0.0,
+                'description': 'Відсутні атрибути required або pattern',
+                'explanation': 'Додайте required для обов\'язкових полів або pattern для формату'
+            })
+        
+        # 2. aria-invalid - 0.1
+        has_aria_invalid = bool(field.get('aria-invalid'))
+        if has_aria_invalid:
+            aria_value = field.get('aria-invalid')
+            details.append({
+                'feature': 'aria-invalid',
+                'status': 'success',
+                'score': 0.1,
+                'description': f'aria-invalid="{aria_value}"',
+                'explanation': 'Скрін-рідери повідомляють про стан валідації поля'
+            })
+        else:
+            details.append({
+                'feature': 'aria-invalid',
+                'status': 'missing',
+                'score': 0.0,
+                'description': 'Відсутній атрибут aria-invalid',
+                'explanation': 'Додайте aria-invalid="false" (або "true" при помилці) для скрін-рідерів'
+            })
+        
+        # 3. aria-describedby зв'язок - 0.1
+        aria_describedby = field.get('aria-describedby')
+        if aria_describedby:
+            exists = understandability_metrics._check_aria_describedby_exists(aria_describedby, html_content)
+            if exists:
+                details.append({
+                    'feature': 'aria-describedby',
+                    'status': 'success',
+                    'score': 0.1,
+                    'description': f'Зв\'язано з елементом: {aria_describedby}',
+                    'explanation': 'Скрін-рідери зачитають пов\'язане повідомлення про помилку'
+                })
+            else:
+                details.append({
+                    'feature': 'aria-describedby',
+                    'status': 'error',
+                    'score': 0.0,
+                    'description': f'Елемент {aria_describedby} не знайдено',
+                    'explanation': 'Створіть елемент з відповідним ID для повідомлення про помилку'
+                })
+        else:
+            details.append({
+                'feature': 'aria-describedby',
+                'status': 'missing',
+                'score': 0.0,
+                'description': 'Відсутній зв\'язок з повідомленням про помилку',
+                'explanation': 'Додайте aria-describedby="error-id" та створіть відповідний елемент'
+            })
+        
+        # 4. role="alert" елементи - 0.1
+        has_alerts = understandability_metrics._check_alert_elements_exist(html_content)
+        if has_alerts:
+            details.append({
+                'feature': 'role="alert"',
+                'status': 'success',
+                'score': 0.1,
+                'description': 'На сторінці є елементи з role="alert"',
+                'explanation': 'Скрін-рідери автоматично оголосять повідомлення про помилки'
+            })
+        else:
+            details.append({
+                'feature': 'role="alert"',
+                'status': 'missing',
+                'score': 0.0,
+                'description': 'Відсутні alert елементи на сторінці',
+                'explanation': 'Додайте role="alert" до елементів з повідомленнями про помилки'
+            })
+        
+        return details
+    
+    def _analyze_phase2_details(self, field, html_content: str, understandability_metrics) -> List[Dict[str, Any]]:
+        """Детальний аналіз Фази 2 для UI"""
+        
+        details = []
+        error_messages = understandability_metrics._find_error_messages_for_field(field, html_content)
+        
+        if not error_messages:
+            details.append({
+                'feature': 'Повідомлення про помилки',
+                'status': 'missing',
+                'score': 0.0,
+                'description': 'Повідомлення про помилки не знайдено',
+                'explanation': 'Створіть елементи з повідомленнями та зв\'яжіть через aria-describedby'
+            })
+            return details
+        
+        # Аналізуємо кожне повідомлення
+        total_quality = 0.0
+        for i, message in enumerate(error_messages, 1):
+            message_quality = understandability_metrics._assess_error_message_quality(message)
+            total_quality += message_quality
+            
+            # Детальний аналіз якості повідомлення
+            quality_details = self._analyze_message_quality(message)
+            
+            status = 'success' if message_quality >= 0.7 else 'warning' if message_quality >= 0.4 else 'error'
+            
+            details.append({
+                'feature': f'Повідомлення {i}',
+                'status': status,
+                'score': message_quality,
+                'description': f'"{message}" (якість: {message_quality:.2f})',
+                'explanation': quality_details,
+                'message_text': message
+            })
+        
+        # Загальна оцінка
+        average_quality = total_quality / len(error_messages)
+        phase2_score = average_quality * 0.3
+        
+        details.insert(0, {
+            'feature': 'Загальна якість повідомлень',
+            'status': 'info',
+            'score': phase2_score,
+            'description': f'Середня якість: {average_quality:.2f}, фінальний скор: {phase2_score:.3f}',
+            'explanation': f'Проаналізовано {len(error_messages)} повідомлень. Максимальний скор фази: 0.3'
+        })
+        
+        return details
+    
+    def _analyze_phase3_details(self, field, html_content: str, understandability_metrics) -> List[Dict[str, Any]]:
+        """Детальний аналіз Фази 3 для UI"""
+        
+        details = []
+        
+        # 1. Live regions - 0.15
+        has_live_regions = understandability_metrics._check_live_regions_exist(html_content)
+        if has_live_regions:
+            details.append({
+                'feature': 'Live regions',
+                'status': 'success',
+                'score': 0.15,
+                'description': 'Знайдено aria-live або role="status" елементи',
+                'explanation': 'Скрін-рідери автоматично оголосять динамічні зміни'
+            })
+        else:
+            details.append({
+                'feature': 'Live regions',
+                'status': 'missing',
+                'score': 0.0,
+                'description': 'Відсутні live regions',
+                'explanation': 'Додайте aria-live="polite" або role="status" для динамічних повідомлень'
+            })
+        
+        # 2. JavaScript валідація - 0.15
+        has_js_validation = understandability_metrics._detect_javascript_validation(field, html_content)
+        if has_js_validation:
+            details.append({
+                'feature': 'JavaScript валідація',
+                'status': 'success',
+                'score': 0.15,
+                'description': 'Виявлено JavaScript код валідації',
+                'explanation': 'Інтерактивна валідація покращує користувацький досвід'
+            })
+        else:
+            details.append({
+                'feature': 'JavaScript валідація',
+                'status': 'missing',
+                'score': 0.0,
+                'description': 'JavaScript валідація не виявлена',
+                'explanation': 'Додайте інтерактивну валідацію для миттєвого зворотного зв\'язку'
+            })
+        
+        return details
+    
+    def _analyze_message_quality(self, message_text: str) -> str:
+        """Аналіз якості повідомлення про помилку"""
+        
+        issues = []
+        strengths = []
+        
+        # Довжина
+        length = len(message_text)
+        if 10 <= length <= 100:
+            strengths.append("оптимальна довжина")
+        elif 5 <= length <= 150:
+            strengths.append("прийнятна довжина")
+        else:
+            if length < 5:
+                issues.append("занадто коротке")
+            else:
+                issues.append("занадто довге")
+        
+        # Конструктивність
+        constructive_words = ['введіть', 'виберіть', 'перевірте', 'має містити', 'формат', 'please', 'enter', 'select', 'check']
+        if any(word in message_text.lower() for word in constructive_words):
+            strengths.append("конструктивні поради")
+        else:
+            issues.append("немає конструктивних порад")
+        
+        # Специфічність
+        specific_words = ['email', 'пароль', 'телефон', 'дата', 'символів', 'цифр', 'password', 'phone', 'date']
+        if any(word in message_text.lower() for word in specific_words):
+            strengths.append("специфічна інформація")
+        else:
+            issues.append("загальне формулювання")
+        
+        result_parts = []
+        if strengths:
+            result_parts.append("✅ " + ", ".join(strengths))
+        if issues:
+            result_parts.append("❌ " + ", ".join(issues))
+        
+        return "; ".join(result_parts) if result_parts else "Базове повідомлення"
+    
+    def _get_phase1_explanation(self) -> str:
+        """Пояснення Фази 1"""
+        return ("Базові атрибути доступності, які забезпечують мінімальну підтримку помилок. "
+                "Включає HTML5 валідацію, ARIA атрибути для скрін-рідерів та елементи для повідомлень.")
+    
+    def _get_phase2_explanation(self) -> str:
+        """Пояснення Фази 2"""
+        return ("Якісні повідомлення про помилки, які допомагають користувачам зрозуміти та виправити проблеми. "
+                "Повідомлення мають бути зрозумілими, конструктивними та специфічними.")
+    
+    def _get_phase3_explanation(self) -> str:
+        """Пояснення Фази 3"""
+        return ("Динамічна валідація та інтерактивний зворотний зв'язок. "
+                "Включає live regions для скрін-рідерів та JavaScript для миттєвої валідації.")
+    
+    def _summarize_form_features(self, field_details: List[Dict[str, Any]]) -> str:
+        """Створює короткий опис функцій підтримки помилок форми"""
+        
+        if not field_details:
+            return "Немає полів для валідації"
+        
+        features = []
+        
+        # Підрахунок функцій по фазах
+        phase1_features = 0
+        phase2_features = 0
+        phase3_features = 0
+        
+        for field in field_details:
+            if field.get('phase1_score', 0) > 0:
+                phase1_features += 1
+            if field.get('phase2_score', 0) > 0:
+                phase2_features += 1
+            if field.get('phase3_score', 0) > 0:
+                phase3_features += 1
+        
+        total_fields = len(field_details)
+        
+        if phase1_features > 0:
+            features.append(f"Базова підтримка: {phase1_features}/{total_fields} полів")
+        if phase2_features > 0:
+            features.append(f"Якісні повідомлення: {phase2_features}/{total_fields} полів")
+        if phase3_features > 0:
+            features.append(f"Динамічна валідація: {phase3_features}/{total_fields} полів")
+        
+        if not features:
+            features.append("Мінімальна підтримка помилок")
+        
+        return '; '.join(features)
+    
+    def _identify_form_issues(self, field_details: List[Dict[str, Any]], form_quality: float) -> List[str]:
+        """Ідентифікує проблеми з підтримкою помилок форми"""
+        
+        issues = []
+        
+        if not field_details:
+            issues.append("Немає полів що потребують валідації")
+            return issues
+        
+        # Аналіз по фазах
+        phase1_count = sum(1 for field in field_details if field.get('phase1_score', 0) > 0)
+        phase2_count = sum(1 for field in field_details if field.get('phase2_score', 0) > 0)
+        phase3_count = sum(1 for field in field_details if field.get('phase3_score', 0) > 0)
+        
+        total_fields = len(field_details)
+        
+        if phase1_count == 0:
+            issues.append("Відсутня базова підтримка помилок (aria-invalid, валідація)")
+        elif phase1_count < total_fields:
+            issues.append(f"Неповна базова підтримка ({phase1_count}/{total_fields} полів)")
+        
+        if phase2_count == 0:
+            issues.append("Відсутні якісні повідомлення про помилки")
+        elif phase2_count < total_fields / 2:
+            issues.append(f"Мало якісних повідомлень ({phase2_count}/{total_fields} полів)")
+        
+        if phase3_count == 0:
+            issues.append("Відсутня динамічна валідація")
+        
+        if form_quality < 0.3:
+            issues.append(f"Дуже низька якість підтримки помилок ({form_quality:.2f})")
+        elif form_quality < 0.5:
+            issues.append(f"Низька якість підтримки помилок ({form_quality:.2f})")
+        
+        return issues
+    
+    def _summarize_dynamic_features(self, dynamic_test_result: Dict[str, Any]) -> str:
+        """Створює опис функцій динамічного тестування"""
+        
+        if not dynamic_test_result or 'error' in dynamic_test_result:
+            return "Динамічне тестування не вдалося"
+        
+        features = []
+        
+        # Аналізуємо результати динамічного тестування
+        if dynamic_test_result.get('has_error_response'):
+            features.append("Реагує на помилки")
+        
+        if dynamic_test_result.get('field_specific_errors'):
+            features.append("Поле-специфічні повідомлення")
+        elif dynamic_test_result.get('general_error_message'):
+            features.append("Загальні повідомлення")
+        
+        if dynamic_test_result.get('aria_updates'):
+            features.append("ARIA оновлення")
+        
+        if dynamic_test_result.get('focus_management'):
+            features.append("Управління фокусом")
+        
+        error_count = len(dynamic_test_result.get('error_messages', []))
+        if error_count > 0:
+            features.append(f"{error_count} повідомлень")
+        
+        return "; ".join(features) if features else "Базова динамічна підтримка"
+    
+    def _summarize_hybrid_form_features(self, field_details: List[Dict[str, Any]], dynamic_test_result: Dict[str, Any]) -> str:
+        """Створює короткий опис функцій підтримки помилок форми (гібридний)"""
+        
+        if not field_details:
+            return "Немає полів для валідації"
+        
+        # Статичні функції
+        static_features = []
+        phase1_features = sum(1 for field in field_details if field.get('phase1_score', 0) > 0)
+        phase2_features = sum(1 for field in field_details if field.get('phase2_score', 0) > 0)
+        phase3_features = sum(1 for field in field_details if field.get('phase3_score', 0) > 0)
+        
+        total_fields = len(field_details)
+        
+        if phase1_features > 0:
+            static_features.append(f"Базова підтримка: {phase1_features}/{total_fields}")
+        if phase2_features > 0:
+            static_features.append(f"Якісні повідомлення: {phase2_features}/{total_fields}")
+        if phase3_features > 0:
+            static_features.append(f"Статична валідація: {phase3_features}/{total_fields}")
+        
+        # Динамічні функції
+        dynamic_features = []
+        if dynamic_test_result and 'error' not in dynamic_test_result:
+            if dynamic_test_result.get('has_error_response'):
+                dynamic_features.append("Динамічний відгук")
+            if dynamic_test_result.get('field_specific_errors'):
+                dynamic_features.append("Локалізовані помилки")
+            if dynamic_test_result.get('aria_updates'):
+                dynamic_features.append("ARIA оновлення")
+        
+        # Комбінуємо результати
+        all_features = []
+        if static_features:
+            all_features.append("Статично: " + "; ".join(static_features))
+        if dynamic_features:
+            all_features.append("Динамічно: " + "; ".join(dynamic_features))
+        
+        if not all_features:
+            all_features.append("Мінімальна підтримка помилок")
+        
+        return " | ".join(all_features)
+    
+    def _identify_hybrid_form_issues(self, field_details: List[Dict[str, Any]], combined_quality: float, dynamic_test_result: Dict[str, Any]) -> List[str]:
+        """Ідентифікує проблеми з підтримкою помилок форми (гібридний аналіз)"""
+        
+        issues = []
+        
+        if not field_details:
+            issues.append("Немає полів що потребують валідації")
+            return issues
+        
+        # Статичні проблеми
+        phase1_count = sum(1 for field in field_details if field.get('phase1_score', 0) > 0)
+        phase2_count = sum(1 for field in field_details if field.get('phase2_score', 0) > 0)
+        total_fields = len(field_details)
+        
+        if phase1_count == 0:
+            issues.append("Відсутня базова статична підтримка")
+        elif phase1_count < total_fields:
+            issues.append(f"Неповна статична підтримка ({phase1_count}/{total_fields})")
+        
+        if phase2_count == 0:
+            issues.append("Відсутні статичні повідомлення")
+        
+        # Динамічні проблеми
+        if dynamic_test_result:
+            if 'error' in dynamic_test_result:
+                issues.append(f"Динамічне тестування не вдалося: {dynamic_test_result['error']}")
+            else:
+                if not dynamic_test_result.get('has_error_response'):
+                    issues.append("Форма не реагує на невалідні дані")
+                
+                if not dynamic_test_result.get('field_specific_errors') and not dynamic_test_result.get('general_error_message'):
+                    issues.append("Відсутні динамічні повідомлення про помилки")
+                
+                if not dynamic_test_result.get('aria_updates'):
+                    issues.append("ARIA атрибути не оновлюються")
+        else:
+            issues.append("Динамічне тестування не виконувалося")
+        
+        # Загальна якість
+        if combined_quality < 0.3:
+            issues.append(f"Дуже низька загальна якість ({combined_quality:.2f})")
+        elif combined_quality < 0.5:
+            issues.append(f"Низька загальна якість ({combined_quality:.2f})")
+        
+        return issues
+    
+    def _identify_error_support_issues(self, form, html_content: str) -> list:
+        """Ідентифікує проблеми з підтримкою помилок"""
+        
+        issues = []
+        
+        fields = form.find_all(['input', 'textarea', 'select'])
+        validatable_fields = []
+        
+        from accessibility_evaluator.core.metrics.understandability import UnderstandabilityMetrics
+        metrics = UnderstandabilityMetrics()
+        
+        for field in fields:
+            if metrics._field_needs_validation(field):
+                validatable_fields.append(field)
+        
+        if not validatable_fields:
+            issues.append("Немає полів що потребують валідації")
+            return issues
+        
+        # Перевірка загальних проблем
+        has_validation = any(field.get('required') or field.get('pattern') for field in validatable_fields)
+        if not has_validation:
+            issues.append("Відсутня базова валідація (required/pattern)")
+        
+        has_aria_invalid = any(field.get('aria-invalid') for field in validatable_fields)
+        if not has_aria_invalid:
+            issues.append("Відсутні aria-invalid атрибути")
+        
+        has_error_messages = any(field.get('aria-describedby') for field in validatable_fields)
+        if not has_error_messages:
+            issues.append("Відсутні зв'язки з повідомленнями про помилки (aria-describedby)")
+        
+        # Перевірка live regions
+        if not metrics._check_live_regions_exist(html_content):
+            issues.append("Відсутні live regions для динамічних повідомлень")
+        
+        # Перевірка alert елементів
+        if not metrics._check_alert_elements_exist(html_content):
+            issues.append("Відсутні role='alert' елементи")
+        
+        return issues
     
     def _analyze_localization_details(self, page_data: Dict[str, Any]) -> Dict[str, Any]:
         """Детальний аналіз локалізації"""
