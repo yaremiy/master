@@ -1734,47 +1734,6 @@ class AccessibilityEvaluator:
         
         return issues
     
-    def _identify_error_support_issues(self, form, html_content: str) -> list:
-        """Ідентифікує проблеми з підтримкою помилок"""
-        
-        issues = []
-        
-        fields = form.find_all(['input', 'textarea', 'select'])
-        validatable_fields = []
-        
-        from accessibility_evaluator.core.metrics.understandability import UnderstandabilityMetrics
-        metrics = UnderstandabilityMetrics()
-        
-        for field in fields:
-            if metrics._field_needs_validation(field):
-                validatable_fields.append(field)
-        
-        if not validatable_fields:
-            issues.append("Немає полів що потребують валідації")
-            return issues
-        
-        # Перевірка загальних проблем
-        has_validation = any(field.get('required') or field.get('pattern') for field in validatable_fields)
-        if not has_validation:
-            issues.append("Відсутня базова валідація (required/pattern)")
-        
-        has_aria_invalid = any(field.get('aria-invalid') for field in validatable_fields)
-        if not has_aria_invalid:
-            issues.append("Відсутні aria-invalid атрибути")
-        
-        has_error_messages = any(field.get('aria-describedby') for field in validatable_fields)
-        if not has_error_messages:
-            issues.append("Відсутні зв'язки з повідомленнями про помилки (aria-describedby)")
-        
-        # Перевірка live regions
-        if not metrics._check_live_regions_exist(html_content):
-            issues.append("Відсутні live regions для динамічних повідомлень")
-        
-        # Перевірка alert елементів
-        if not metrics._check_alert_elements_exist(html_content):
-            issues.append("Відсутні role='alert' елементи")
-        
-        return issues
     
     def _analyze_localization_details(self, page_data: Dict[str, Any]) -> Dict[str, Any]:
         """Детальний аналіз локалізації"""
