@@ -1,0 +1,231 @@
+/**
+ * CSS для content scripts Accessibility Evaluator
+ * Стилі для підсвічування проблем та overlay елементів
+ */
+
+/* Підсвічування проблемних елементів */
+.accessibility-highlight-error {
+    outline: 3px solid #dc3545 !important;
+    outline-offset: 2px !important;
+    background-color: rgba(220, 53, 69, 0.1) !important;
+    position: relative !important;
+}
+
+.accessibility-highlight-warning {
+    outline: 3px solid #ffc107 !important;
+    outline-offset: 2px !important;
+    background-color: rgba(255, 193, 7, 0.1) !important;
+    position: relative !important;
+}
+
+.accessibility-highlight-info {
+    outline: 3px solid #17a2b8 !important;
+    outline-offset: 2px !important;
+    background-color: rgba(23, 162, 184, 0.1) !important;
+    position: relative !important;
+}
+
+/* Tooltip для проблем */
+.accessibility-tooltip {
+    position: absolute !important;
+    z-index: 10000 !important;
+    background: #333 !important;
+    color: white !important;
+    padding: 8px 12px !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    max-width: 250px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+    transition: opacity 0.3s ease !important;
+}
+
+.accessibility-tooltip.show {
+    opacity: 1 !important;
+}
+
+.accessibility-tooltip::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 100% !important;
+    left: 50% !important;
+    margin-left: -5px !important;
+    border: 5px solid transparent !important;
+    border-top-color: #333 !important;
+}
+
+/* Overlay для аналізу */
+.accessibility-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.accessibility-overlay-content {
+    background: white !important;
+    padding: 30px !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+    text-align: center !important;
+    max-width: 400px !important;
+}
+
+.accessibility-spinner {
+    border: 4px solid #f3f3f3 !important;
+    border-top: 4px solid #007bff !important;
+    border-radius: 50% !important;
+    width: 40px !important;
+    height: 40px !important;
+    animation: accessibility-spin 1s linear infinite !important;
+    margin: 0 auto 20px !important;
+}
+
+@keyframes accessibility-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Кнопка закриття */
+.accessibility-close-btn {
+    position: absolute !important;
+    top: 10px !important;
+    right: 10px !important;
+    background: none !important;
+    border: none !important;
+    font-size: 20px !important;
+    cursor: pointer !important;
+    color: #666 !important;
+    padding: 5px !important;
+    border-radius: 50% !important;
+    width: 30px !important;
+    height: 30px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.accessibility-close-btn:hover {
+    background: #f0f0f0 !important;
+    color: #333 !important;
+}
+
+/* Індикатор прогресу */
+.accessibility-progress {
+    width: 100% !important;
+    height: 6px !important;
+    background: #e9ecef !important;
+    border-radius: 3px !important;
+    overflow: hidden !important;
+    margin: 15px 0 !important;
+}
+
+.accessibility-progress-bar {
+    height: 100% !important;
+    background: linear-gradient(90deg, #007bff, #28a745) !important;
+    border-radius: 3px !important;
+    transition: width 0.3s ease !important;
+}
+
+/* Результати аналізу на сторінці */
+.accessibility-results-panel {
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    width: 300px !important;
+    background: white !important;
+    border: 1px solid #dee2e6 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    z-index: 9998 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 14px !important;
+    max-height: 400px !important;
+    overflow-y: auto !important;
+}
+
+.accessibility-results-header {
+    background: #007bff !important;
+    color: white !important;
+    padding: 12px 16px !important;
+    border-radius: 8px 8px 0 0 !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+}
+
+.accessibility-results-body {
+    padding: 16px !important;
+}
+
+.accessibility-metric-item {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 8px 0 !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.accessibility-metric-item:last-child {
+    border-bottom: none !important;
+}
+
+.accessibility-score {
+    font-weight: bold !important;
+    padding: 2px 8px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+}
+
+.accessibility-score.excellent {
+    background: #d4edda !important;
+    color: #155724 !important;
+}
+
+.accessibility-score.good {
+    background: #d1ecf1 !important;
+    color: #0c5460 !important;
+}
+
+.accessibility-score.fair {
+    background: #fff3cd !important;
+    color: #856404 !important;
+}
+
+.accessibility-score.poor {
+    background: #f8d7da !important;
+    color: #721c24 !important;
+}
+
+/* Анімації */
+@keyframes accessibility-fade-in {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.accessibility-fade-in {
+    animation: accessibility-fade-in 0.3s ease !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .accessibility-results-panel {
+        width: calc(100% - 40px) !important;
+        right: 20px !important;
+        left: 20px !important;
+    }
+    
+    .accessibility-overlay-content {
+        margin: 20px !important;
+        max-width: none !important;
+    }
+}

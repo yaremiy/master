@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Accessibility Evaluator",
+  "version": "1.0.0",
+  "description": "Комплексний аналізатор доступності веб-сторінок з систематичним тестуванням форм",
+  "author": "Accessibility Team",
+  
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads"
+  ],
+  
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": [
+      "utils/helpers.js",
+      "content-scripts/metrics/base-metrics.js",
+      "content-scripts/metrics/perceptibility-metrics.js",
+      "content-scripts/metrics/operability-metrics.js",
+      "content-scripts/metrics/understandability-metrics.js",
+      "content-scripts/form-tester.js",
+      "content-scripts/analyzer.js"
+    ],
+    "css": ["content-scripts/analyzer.css"],
+    "run_at": "document_idle"
+  }],
+  
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  
+  "web_accessible_resources": [{
+    "resources": ["assets/*"],
+    "matches": ["<all_urls>"]
+  }]
+}
