@@ -12,6 +12,12 @@
     "downloads"
   ],
   
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+    "http://0.0.0.0:8000/*"
+  ],
+  
   "action": {
     "default_popup": "popup/popup.html"
   },
@@ -20,10 +26,6 @@
     "matches": ["<all_urls>"],
     "js": [
       "utils/helpers.js",
-      "content-scripts/metrics/base-metrics.js",
-      "content-scripts/metrics/perceptibility-metrics.js",
-      "content-scripts/metrics/operability-metrics.js",
-      "content-scripts/metrics/understandability-metrics.js",
       "content-scripts/form-tester.js",
       "content-scripts/analyzer.js"
     ],

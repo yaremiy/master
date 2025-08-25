@@ -192,16 +192,16 @@ class AccessibilityPopup {
         document.getElementById('results-container').style.display = 'block';
 
         // Загальний скор
-        const totalScore = Math.round(results.totalScore * 100);
+        const totalScore = (results.totalScore * 100).toFixed(1);
         document.getElementById('total-score').textContent = totalScore;
         this.updateScoreInterpretation(totalScore);
 
         // Метрики
         const metrics = ['perceptibility', 'operability', 'understandability', 'localization'];
         metrics.forEach(metric => {
-            const score = Math.round((results.metrics[metric] || 0) * 100);
+            const score = ((results.metrics[metric] || 0) * 100).toFixed(1);
             document.getElementById(`${metric}-score`).textContent = score;
-            this.updateMetricCard(metric, score);
+            this.updateMetricCard(metric, parseFloat(score));
         });
 
         // Детальні результати

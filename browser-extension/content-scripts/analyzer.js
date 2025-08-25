@@ -156,12 +156,23 @@ class AccessibilityAnalyzer {
             // Генеруємо рекомендації
             const recommendations = this.generateRecommendations(issues, metrics);
 
-            // Розраховуємо загальний скор
-            const totalScore = this.calculateTotalScore(metrics);
+            // Використовуємо фінальний скор з backend, якщо доступний
+            let totalScore;
+            if (metrics._backendFinalScore !== undefined) {
+                totalScore = metrics._backendFinalScore;
+                this.helpers.log(`Використовуємо backend final score: ${totalScore}`, 'info');
+            } else {
+                totalScore = this.calculateTotalScore(metrics);
+                this.helpers.log(`Розраховуємо локальний score: ${totalScore}`, 'info');
+            }
+
+            // Очищуємо метрики від службових полів для UI
+            const cleanMetrics = { ...metrics };
+            delete cleanMetrics._backendFinalScore;
 
             const results = {
                 totalScore: totalScore,
-                metrics: metrics,
+                metrics: cleanMetrics,
                 issues: issues,
                 recommendations: recommendations,
                 pageData: {
@@ -188,7 +199,7 @@ class AccessibilityAnalyzer {
     }
 
     gatherPageData() {
-        return {
+        const pageData = {
             url: window.location.href,
             title: document.title,
             html_content: document.documentElement.outerHTML,
@@ -215,419 +226,112 @@ class AccessibilityAnalyzer {
             language: this.getDocumentLanguage(),
             direction: this.getTextDirection()
         };
+
+        this.helpers.log(`📊 Зібрано дані сторінки:`, 'info');
+        this.helpers.log(`  URL: ${pageData.url}`, 'info');
+        this.helpers.log(`  Title: ${pageData.title}`, 'info');
+        this.helpers.log(`  HTML length: ${pageData.html_content.length}`, 'info');
+        this.helpers.log(`  Images: ${pageData.images.length}`, 'info');
+        this.helpers.log(`  Forms: ${pageData.forms.length}`, 'info');
+        this.helpers.log(`  Language: ${pageData.language}`, 'info');
+
+        return pageData;
     }
 
     async calculateMetrics(pageData, options) {
-        const metrics = {};
-
+        this.helpers.log('🌐 Використовуємо Python backend для розрахунку метрик', 'info');
+        
         try {
-            // Перевіряємо доступність класів метрик
-            this.helpers.log('Перевіряємо доступність класів метрик...', 'info');
-            this.helpers.log(`PerceptibilityMetrics: ${typeof PerceptibilityMetrics}`, 'info');
-            this.helpers.log(`OperabilityMetrics: ${typeof OperabilityMetrics}`, 'info');
-            this.helpers.log(`UnderstandabilityMetrics: ${typeof UnderstandabilityMetrics}`, 'info');
+            // Відправляємо HTML на Python backend
+            const response = await this.callPythonBackend(pageData);
             
-            if (typeof PerceptibilityMetrics !== 'undefined' && 
-                typeof OperabilityMetrics !== 'undefined' && 
-                typeof UnderstandabilityMetrics !== 'undefined') {
-                
-                this.helpers.log('Використовуємо повноцінні класи метрик', 'info');
-                
-                // Використовуємо повноцінні класи метрик
-                const perceptibilityMetrics = new PerceptibilityMetrics();
-                const operabilityMetrics = new OperabilityMetrics();
-                const understandabilityMetrics = new UnderstandabilityMetrics();
-
-                const perceptibilityResults = await perceptibilityMetrics.calculateMetric(pageData);
-                const operabilityResults = await operabilityMetrics.calculateMetric(pageData);
-                const understandabilityResults = await understandabilityMetrics.calculateMetric(pageData);
-
-                this.helpers.log('Результати PerceptibilityMetrics:', 'info');
-                this.helpers.log(perceptibilityResults, 'info');
-                this.helpers.log('Результати OperabilityMetrics:', 'info');
-                this.helpers.log(operabilityResults, 'info');
-                this.helpers.log('Результати UnderstandabilityMetrics:', 'info');
-                this.helpers.log(understandabilityResults, 'info');
-
-                // Класи повертають готові скори
-                metrics.perceptibility = perceptibilityResults || 0;
-                metrics.operability = operabilityResults || 0;
-                metrics.understandability = understandabilityResults || 0;
-
-            } else {
-                // Fallback до спрощених методів
-                this.helpers.log('Використовуємо спрощені методи розрахунку', 'warn');
-                
-                // Сприйнятність (Perceptibility)
-                metrics.perceptibility = await this.calculatePerceptibilityMetric(pageData);
-
-                // Керованість (Operability) 
-                metrics.operability = await this.calculateOperabilityMetric(pageData);
-
-                // Зрозумілість (Understandability) - включає тестування форм
-                metrics.understandability = await this.calculateUnderstandabilityMetric(pageData, options);
+            if (response.error) {
+                this.helpers.log(`Помилка backend: ${response.error}`, 'error');
+                return await this.calculateMetricsFallback(pageData, options);
             }
 
-            // Локалізація
-            metrics.localization = await this.calculateLocalizationMetric(pageData);
+            // Backend повертає структуру: { metrics: {...}, subscores: {...}, final_score: ... }
+            const backendMetrics = response.metrics || {};
+            const subscores = response.subscores || {};
+            
+            const metrics = {
+                perceptibility: subscores.perceptibility || backendMetrics.perceptibility || 0,
+                operability: subscores.operability || backendMetrics.operability || 0,
+                understandability: subscores.understandability || backendMetrics.understandability || 0,
+                localization: subscores.localization || backendMetrics.localization || 0,
+                _backendFinalScore: response.final_score // Зберігаємо для порівняння
+            };
+
+            // Детальне логування метрик
+            this.helpers.log('=== МЕТРИКИ З PYTHON BACKEND ===', 'info');
+            Object.entries(metrics).forEach(([key, value]) => {
+                this.helpers.log(`${key}: ${value}`, 'info');
+            });
+            this.helpers.log('Final score:', response.final_score);
+            this.helpers.log('===============================', 'info');
+
+            return metrics;
 
         } catch (error) {
-            this.helpers.log(`Помилка розрахунку метрик: ${error.message}`, 'error');
+            this.helpers.log(`Помилка зв'язку з backend: ${error.message}`, 'warn');
+            return await this.calculateMetricsFallback(pageData, options);
+        }
+    }
+
+    async callPythonBackend(pageData) {
+        const backendUrl = 'http://localhost:8000/api/evaluate-html';
+        
+        const requestData = {
+            html_content: pageData.html_content,
+            base_url: pageData.url,
+            title: pageData.title || document.title
+        };
+
+        this.helpers.log('📤 Відправляємо запит на backend...', 'info');
+        this.helpers.log('Request data:', requestData);
+
+        const response = await fetch(backendUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            this.helpers.log(`Response error: ${errorText}`, 'error');
+            throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
         }
 
-        // Детальне логування метрик
-        this.helpers.log('=== РОЗРАХОВАНІ МЕТРИКИ ===', 'info');
+        const result = await response.json();
+        this.helpers.log('📥 Отримано відповідь від backend', 'info');
+        this.helpers.log('Backend response:', result);
+        
+        return result;
+    }
+
+    async calculateMetricsFallback(pageData, options) {
+        this.helpers.log('🔄 Backend недоступний, повертаємо базові значення', 'warn');
+        
+        // Якщо backend недоступний, повертаємо нейтральні значення
+        const metrics = {
+            perceptibility: 0.7,
+            operability: 0.7,
+            understandability: 0.7,
+            localization: 0.8
+        };
+
+        this.helpers.log('=== FALLBACK МЕТРИКИ (BACKEND НЕДОСТУПНИЙ) ===', 'warn');
         Object.entries(metrics).forEach(([key, value]) => {
-            this.helpers.log(`${key}: ${value}`, 'info');
+            this.helpers.log(`${key}: ${value}`, 'warn');
         });
-        this.helpers.log('========================', 'info');
+        this.helpers.log('============================================', 'warn');
 
         return metrics;
     }
 
-    async calculatePerceptibilityMetric(pageData) {
-        let score = 0.0;
-        let totalWeight = 0;
-
-        // Перевірка alt-текстів для зображень (вага 0.5)
-        const images = pageData.images.filter(img => this.helpers.isElementVisible(img));
-        if (images.length > 0) {
-            const imagesWithAlt = images.filter(img => img.alt !== undefined && img.alt.trim() !== '');
-            const altScore = imagesWithAlt.length / images.length;
-            score += altScore * 0.5;
-            totalWeight += 0.5;
-        } else {
-            // Якщо немає зображень, вважаємо що alt-тексти не потрібні
-            score += 1.0 * 0.5;
-            totalWeight += 0.5;
-        }
-
-        // Перевірка контрастності тексту (вага 0.4)
-        const textElements = document.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, a, button, label');
-        let contrastChecks = 0;
-        let goodContrast = 0;
-
-        // Перевіряємо до 30 елементів для кращої точності
-        Array.from(textElements).slice(0, 30).forEach(element => {
-            if (this.helpers.isElementVisible(element) && element.textContent.trim()) {
-                const styles = window.getComputedStyle(element);
-                const color = styles.color;
-                const backgroundColor = styles.backgroundColor;
-                
-                // Спрощена перевірка контрасту
-                if (this.isGoodContrast(color, backgroundColor)) {
-                    goodContrast++;
-                }
-                contrastChecks++;
-            }
-        });
-
-        if (contrastChecks > 0) {
-            const contrastScore = goodContrast / contrastChecks;
-            score += contrastScore * 0.4;
-            totalWeight += 0.4;
-        } else {
-            // Якщо немає текстових елементів, нейтральна оцінка
-            score += 0.8 * 0.4;
-            totalWeight += 0.4;
-        }
-
-        // Медіа доступність (вага 0.1)
-        const videos = document.querySelectorAll('video');
-        const audios = document.querySelectorAll('audio');
-        if (videos.length > 0 || audios.length > 0) {
-            // Спрощена перевірка - якщо є controls, вважаємо доступним
-            const accessibleMedia = Array.from(videos).filter(v => v.hasAttribute('controls')).length +
-                                   Array.from(audios).filter(a => a.hasAttribute('controls')).length;
-            const mediaScore = accessibleMedia / (videos.length + audios.length);
-            score += mediaScore * 0.1;
-            totalWeight += 0.1;
-        } else {
-            // Якщо немає медіа, повна оцінка
-            score += 1.0 * 0.1;
-            totalWeight += 0.1;
-        }
-
-        return totalWeight > 0 ? score / totalWeight : 0.8;
-    }
-
-    isGoodContrast(color, backgroundColor) {
-        // Спрощена перевірка контрасту
-        if (!color || !backgroundColor || backgroundColor === 'rgba(0, 0, 0, 0)') {
-            return true; // Не можемо перевірити, вважаємо нормальним
-        }
-        
-        // Базова перевірка на темний текст на світлому фоні або навпаки
-        const colorLightness = this.getColorLightness(color);
-        const bgLightness = this.getColorLightness(backgroundColor);
-        
-        const contrast = Math.abs(colorLightness - bgLightness);
-        return contrast > 0.3; // Спрощений поріг
-    }
-
-    getColorLightness(color) {
-        // Спрощене визначення яскравості кольору
-        if (color.includes('rgb')) {
-            const matches = color.match(/\d+/g);
-            if (matches && matches.length >= 3) {
-                const r = parseInt(matches[0]);
-                const g = parseInt(matches[1]);
-                const b = parseInt(matches[2]);
-                return (r * 0.299 + g * 0.587 + b * 0.114) / 255;
-            }
-        }
-        return 0.5; // Нейтральне значення
-    }
-
-    async calculateOperabilityMetric(pageData) {
-        let score = 0.0;
-        let totalWeight = 0;
-
-        // Клавіатурна навігація (вага 0.4)
-        const interactiveElements = pageData.interactive_elements;
-        if (interactiveElements.length > 0) {
-            const focusableElements = interactiveElements.filter(el => this.helpers.isFocusable(el));
-            const keyboardScore = focusableElements.length / interactiveElements.length;
-            score += keyboardScore * 0.4;
-            totalWeight += 0.4;
-        } else {
-            // Якщо немає інтерактивних елементів, повна оцінка
-            score += 1.0 * 0.4;
-            totalWeight += 0.4;
-        }
-
-        // Структурована навігація (вага 0.4)
-        const navigationScore = this.calculateNavigationStructure();
-        score += navigationScore * 0.4;
-        totalWeight += 0.4;
-
-        // Доступні імена для елементів (вага 0.2)
-        const buttons = pageData.buttons.filter(btn => this.helpers.isElementVisible(btn));
-        const links = pageData.links.filter(link => this.helpers.isElementVisible(link));
-        const allActionElements = [...buttons, ...links];
-        
-        if (allActionElements.length > 0) {
-            const elementsWithNames = allActionElements.filter(el => {
-                const name = this.helpers.getAccessibleName(el);
-                return name && name.trim().length > 0;
-            });
-            const namesScore = elementsWithNames.length / allActionElements.length;
-            score += namesScore * 0.2;
-            totalWeight += 0.2;
-        } else {
-            // Якщо немає кнопок/посилань, повна оцінка
-            score += 1.0 * 0.2;
-            totalWeight += 0.2;
-        }
-
-        return totalWeight > 0 ? score / totalWeight : 0.8;
-    }
-
-    calculateNavigationStructure() {
-        let score = 0.0;
-        let checks = 0;
-
-        // Перевіряємо наявність landmarks
-        const landmarks = ['nav', 'main', 'header', 'footer', '[role="navigation"]', '[role="main"]', '[role="banner"]', '[role="contentinfo"]'];
-        let foundLandmarks = 0;
-        landmarks.forEach(selector => {
-            if (document.querySelector(selector)) {
-                foundLandmarks++;
-            }
-        });
-        
-        if (foundLandmarks > 0) {
-            score += Math.min(foundLandmarks / 4, 1.0) * 0.5; // До 4 landmarks
-            checks++;
-        }
-
-        // Перевіряємо ієрархію заголовків
-        const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-        if (headings.length > 0) {
-            const h1Count = document.querySelectorAll('h1').length;
-            const hasProperHierarchy = h1Count === 1 && headings.length > 1;
-            score += (hasProperHierarchy ? 1.0 : 0.6) * 0.5;
-            checks++;
-        } else {
-            score += 0.3 * 0.5; // Немає заголовків - погано для навігації
-            checks++;
-        }
-
-        return checks > 0 ? score / checks : 0.7;
-    }
-
-    async calculateUnderstandabilityMetric(pageData, options) {
-        let score = 0.0;
-        let totalWeight = 0;
-
-        // Зрозумілість інструкцій (вага 0.3)
-        const instructionScore = this.calculateInstructionClarity(pageData);
-        score += instructionScore * 0.3;
-        totalWeight += 0.3;
-
-        // Допомога при введенні (вага 0.3)
-        const inputAssistanceScore = this.calculateInputAssistance(pageData);
-        score += inputAssistanceScore * 0.3;
-        totalWeight += 0.3;
-
-        // Підтримка помилок (вага 0.4)
-        const errorSupportScore = await this.calculateErrorSupport(pageData, options);
-        score += errorSupportScore * 0.4;
-        totalWeight += 0.4;
-
-        return totalWeight > 0 ? score / totalWeight : 0.8;
-    }
-
-    calculateInstructionClarity(pageData) {
-        // Перевіряємо labels для форм
-        const labels = document.querySelectorAll('label');
-        const instructions = document.querySelectorAll('[role="note"], .help-text, .instruction, .hint');
-        
-        let totalInstructions = labels.length + instructions.length;
-        if (totalInstructions === 0) {
-            return 0.8; // Немає інструкцій - нейтральна оцінка
-        }
-
-        let clearInstructions = 0;
-        
-        // Перевіряємо labels
-        labels.forEach(label => {
-            const text = label.textContent.trim();
-            if (text.length >= 2 && text.length <= 50 && !this.hasComplexWords(text)) {
-                clearInstructions++;
-            } else if (text.length > 0) {
-                clearInstructions += 0.5; // Частково зрозуміло
-            }
-        });
-
-        // Перевіряємо інші інструкції
-        instructions.forEach(instruction => {
-            const text = instruction.textContent.trim();
-            if (text.length >= 5 && text.length <= 100 && !this.hasComplexWords(text)) {
-                clearInstructions++;
-            } else if (text.length > 0) {
-                clearInstructions += 0.5;
-            }
-        });
-
-        return Math.min(clearInstructions / totalInstructions, 1.0);
-    }
-
-    calculateInputAssistance(pageData) {
-        const inputs = document.querySelectorAll('input[type="text"], input[type="email"], input[type="password"], input[type="tel"], textarea');
-        
-        if (inputs.length === 0) {
-            return 1.0; // Немає полів вводу
-        }
-
-        let assistedInputs = 0;
-        
-        inputs.forEach(input => {
-            let hasAssistance = false;
-            
-            // Перевіряємо різні види допомоги
-            if (input.placeholder && input.placeholder.trim()) hasAssistance = true;
-            if (input.getAttribute('autocomplete')) hasAssistance = true;
-            if (input.getAttribute('aria-describedby')) hasAssistance = true;
-            if (input.getAttribute('title')) hasAssistance = true;
-            if (input.getAttribute('pattern')) hasAssistance = true;
-            
-            if (hasAssistance) {
-                assistedInputs++;
-            }
-        });
-
-        return assistedInputs / inputs.length;
-    }
-
-    async calculateErrorSupport(pageData, options) {
-        const forms = pageData.forms;
-        
-        if (forms.length === 0) {
-            return 1.0; // Немає форм
-        }
-
-        let totalScore = 0;
-        let formsProcessed = 0;
-
-        // Статичний аналіз підтримки помилок
-        forms.forEach(form => {
-            let formScore = 0;
-            let checks = 0;
-
-            // Перевіряємо наявність валідації
-            const requiredFields = form.querySelectorAll('[required]');
-            const fieldsWithPattern = form.querySelectorAll('[pattern]');
-            if (requiredFields.length > 0 || fieldsWithPattern.length > 0) {
-                formScore += 0.3;
-            }
-            checks++;
-
-            // Перевіряємо ARIA атрибути для помилок
-            const fieldsWithAriaInvalid = form.querySelectorAll('[aria-invalid]');
-            const fieldsWithAriaDescribedby = form.querySelectorAll('[aria-describedby]');
-            if (fieldsWithAriaInvalid.length > 0 || fieldsWithAriaDescribedby.length > 0) {
-                formScore += 0.4;
-            }
-            checks++;
-
-            // Перевіряємо наявність елементів для повідомлень про помилки
-            const errorElements = form.querySelectorAll('.error, .invalid, [role="alert"], .help-text');
-            if (errorElements.length > 0) {
-                formScore += 0.3;
-            }
-            checks++;
-
-            totalScore += checks > 0 ? formScore / checks : 0.5;
-            formsProcessed++;
-        });
-
-        // Якщо включено тестування форм, спробуємо динамічний аналіз
-        if (options.testForms !== false && this.formTester && forms.length > 0) {
-            try {
-                const form = forms[0];
-                const formSelector = form.id ? `#${form.id}` : 'form';
-                const formResult = await this.formTester.testFormErrorBehaviorSystematic(formSelector);
-                
-                if (formResult && typeof formResult.quality_score === 'number') {
-                    // Комбінуємо статичний та динамічний аналіз
-                    const staticScore = totalScore / formsProcessed;
-                    const dynamicScore = formResult.quality_score;
-                    return (staticScore * 0.4 + dynamicScore * 0.6);
-                }
-            } catch (error) {
-                this.helpers.log(`Помилка динамічного тестування форми: ${error.message}`, 'warn');
-            }
-        }
-
-        return formsProcessed > 0 ? totalScore / formsProcessed : 0.8;
-    }
-
-    hasComplexWords(text) {
-        // Спрощена перевірка на складні слова
-        const words = text.split(/\s+/);
-        const complexWords = words.filter(word => word.length > 12 || /[А-ЯЁІЇЄҐ]{3,}/.test(word));
-        return complexWords.length > words.length * 0.3; // Більше 30% складних слів
-    }
-
-    async calculateLocalizationMetric(pageData) {
-        let score = 0.0;
-        let totalChecks = 0;
-
-        // Перевірка мови документа
-        if (pageData.language && pageData.language !== 'unknown') {
-            score += 0.5;
-        }
-        totalChecks++;
-
-        // Перевірка напрямку тексту
-        if (pageData.direction) {
-            score += 0.5;
-        }
-        totalChecks++;
-
-        return totalChecks > 0 ? score / totalChecks : 1.0;
-    }
+    // Всі методи розрахунку метрик видалені - тепер використовуємо Python backend
 
     calculateTotalScore(metrics) {
         const weights = {
