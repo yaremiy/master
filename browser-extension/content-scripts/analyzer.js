@@ -166,7 +166,7 @@ class AccessibilityAnalyzer {
                 this.helpers.log(`Розраховуємо локальний score: ${totalScore}`, 'info');
             }
 
-            // Очищуємо метрики від службових полів для UI
+            // Очищуємо метрики від службових полів для UI, але зберігаємо для звіту
             const cleanMetrics = { ...metrics };
             delete cleanMetrics._backendFinalScore;
 
@@ -483,7 +483,7 @@ class AccessibilityAnalyzer {
         return document.documentElement.dir || 
                document.querySelector('html')?.getAttribute('dir') ||
                window.getComputedStyle(document.documentElement).direction || 
-               'ltr';
+               'auto';
     }
 
     // UI методи

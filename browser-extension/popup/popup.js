@@ -376,48 +376,325 @@ class AccessibilityPopup {
 
     generateReport(results, pageUrl) {
         const date = new Date().toLocaleDateString('uk-UA');
-        const totalScore = Math.round(results.totalScore * 100);
+        const totalScore = (results.totalScore * 100).toFixed(1);
         
         return `
             <!DOCTYPE html>
             <html lang="uk">
             <head>
                 <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Звіт доступності - ${pageUrl}</title>
                 <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; }
-                    .header { border-bottom: 2px solid #007bff; padding-bottom: 20px; }
-                    .score { font-size: 24px; font-weight: bold; color: #28a745; }
-                    .metric { margin: 10px 0; padding: 10px; border-left: 4px solid #007bff; }
-                    .issue { margin: 5px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }
+                    body { 
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                        margin: 0; 
+                        padding: 40px; 
+                        background-color: #f8f9fa;
+                        line-height: 1.6;
+                    }
+                    .container {
+                        max-width: 1200px;
+                        margin: 0 auto;
+                        background: white;
+                        border-radius: 12px;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                        overflow: hidden;
+                    }
+                    .header { 
+                        background: linear-gradient(135deg, #007bff, #0056b3);
+                        color: white;
+                        padding: 30px 40px;
+                        text-align: center;
+                    }
+                    .header h1 { margin: 0 0 20px 0; font-size: 2.5em; }
+                    .header p { margin: 5px 0; opacity: 0.9; }
+                    .score-badge { 
+                        display: inline-block;
+                        background: rgba(255,255,255,0.2);
+                        padding: 15px 30px;
+                        border-radius: 50px;
+                        font-size: 1.8em;
+                        font-weight: bold;
+                        margin-top: 20px;
+                    }
+                    .content { padding: 40px; }
+                    .metrics-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                        gap: 20px;
+                        margin: 30px 0;
+                    }
+                    .metric-card {
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                        padding: 20px;
+                        border-left: 5px solid #007bff;
+                    }
+                    .metric-title { 
+                        font-weight: bold; 
+                        color: #495057; 
+                        margin-bottom: 10px;
+                        font-size: 1.1em;
+                    }
+                    .metric-score { 
+                        font-size: 2em; 
+                        font-weight: bold; 
+                        color: #28a745; 
+                    }
+                    .metric-details {
+                        margin-top: 15px;
+                        font-size: 0.9em;
+                        color: #6c757d;
+                    }
+                    .section {
+                        margin: 40px 0;
+                        padding: 30px;
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                    }
+                    .section h2 {
+                        color: #495057;
+                        border-bottom: 2px solid #dee2e6;
+                        padding-bottom: 10px;
+                        margin-bottom: 20px;
+                    }
+                    .detail-item {
+                        background: white;
+                        margin: 10px 0;
+                        padding: 15px;
+                        border-radius: 6px;
+                        border-left: 4px solid #007bff;
+                    }
+                    .detail-label {
+                        font-weight: bold;
+                        color: #495057;
+                        margin-bottom: 5px;
+                    }
+                    .detail-value {
+                        color: #6c757d;
+                    }
+                    .recommendations {
+                        background: #e3f2fd;
+                        border-left: 4px solid #2196f3;
+                        padding: 20px;
+                        border-radius: 6px;
+                        margin: 20px 0;
+                    }
+                    .recommendations h3 {
+                        color: #1976d2;
+                        margin-top: 0;
+                    }
+                    .recommendations ul {
+                        margin: 0;
+                        padding-left: 20px;
+                    }
+                    .recommendations li {
+                        margin: 8px 0;
+                        color: #424242;
+                    }
+                    .footer {
+                        text-align: center;
+                        padding: 20px;
+                        color: #6c757d;
+                        font-size: 0.9em;
+                        border-top: 1px solid #dee2e6;
+                        margin-top: 40px;
+                    }
+                    .score-excellent { color: #28a745; }
+                    .score-good { color: #17a2b8; }
+                    .score-fair { color: #ffc107; }
+                    .score-poor { color: #fd7e14; }
+                    .score-critical { color: #dc3545; }
                 </style>
             </head>
             <body>
-                <div class="header">
-                    <h1>🔍 Звіт доступності</h1>
-                    <p><strong>URL:</strong> ${pageUrl}</p>
-                    <p><strong>Дата:</strong> ${date}</p>
-                    <p><strong>Загальний скор:</strong> <span class="score">${totalScore}%</span></p>
+                <div class="container">
+                    <div class="header">
+                        <h1>🔍 Звіт доступності веб-сайту</h1>
+                        <p><strong>URL:</strong> ${pageUrl}</p>
+                        <p><strong>Дата аналізу:</strong> ${date}</p>
+                        <div class="score-badge">
+                            Загальний скор: ${totalScore}%
+                        </div>
+                    </div>
+                    
+                    <div class="content">
+                        ${this.generateMetricsSection(results)}
+                        ${this.generateDetailedAnalysis(results)}
+                        ${this.generateRecommendations(results)}
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Згенеровано Accessibility Evaluator v1.0.0 • ${new Date().toLocaleString('uk-UA')}</p>
+                        <p>Аналіз базується на принципах WCAG 2.1 та науковій методології оцінки доступності</p>
+                    </div>
                 </div>
-                
-                <h2>📊 Метрики</h2>
-                ${Object.entries(results.metrics).map(([key, value]) => 
-                    `<div class="metric"><strong>${key}:</strong> ${Math.round(value * 100)}%</div>`
-                ).join('')}
-                
-                ${results.issues && results.issues.length > 0 ? `
-                    <h2>🚨 Проблеми</h2>
-                    ${results.issues.map(issue => 
-                        `<div class="issue"><strong>${issue.severity}:</strong> ${issue.description}</div>`
-                    ).join('')}
-                ` : ''}
-                
-                <p style="margin-top: 40px; color: #666; font-size: 12px;">
-                    Згенеровано Accessibility Evaluator v1.0.0
-                </p>
             </body>
             </html>
         `;
+    }
+
+    generateMetricsSection(results) {
+        const metricsInfo = {
+            perceptibility: {
+                title: '👁️ Сприйнятність (Perceptibility)',
+                description: 'Наскільки легко користувачі можуть сприймати інформацію'
+            },
+            operability: {
+                title: '⌨️ Керованість (Operability)', 
+                description: 'Наскільки легко користувачі можуть взаємодіяти з інтерфейсом'
+            },
+            understandability: {
+                title: '🧠 Зрозумілість (Understandability)',
+                description: 'Наскільки легко користувачі можуть зрозуміти інформацію та інтерфейс'
+            },
+            localization: {
+                title: '🌍 Локалізація (Localization)',
+                description: 'Наскільки добре сайт адаптований для різних мов та культур'
+            }
+        };
+
+        let html = '<h2>📊 Детальні метрики доступності</h2>';
+        html += '<div class="metrics-grid">';
+
+        Object.entries(results.metrics).forEach(([key, value]) => {
+            const score = (value * 100).toFixed(1);
+            const info = metricsInfo[key];
+            const scoreClass = this.getScoreClass(parseFloat(score));
+            
+            html += `
+                <div class="metric-card">
+                    <div class="metric-title">${info?.title || key}</div>
+                    <div class="metric-score ${scoreClass}">${score}%</div>
+                    <div class="metric-details">${info?.description || ''}</div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        return html;
+    }
+
+    generateDetailedAnalysis(results) {
+        let html = '<div class="section">';
+        html += '<h2>🔍 Детальний аналіз</h2>';
+
+        // Статистика сторінки
+        if (results.pageData) {
+            html += `
+                <div class="detail-item">
+                    <div class="detail-label">📄 Статистика сторінки</div>
+                    <div class="detail-value">
+                        <p><strong>Заголовок:</strong> ${results.pageData.title || 'Не вказано'}</p>
+                        <p><strong>Мова:</strong> ${results.pageData.language || 'Не визначено'}</p>
+                        <p><strong>Напрямок тексту:</strong> ${results.pageData.direction || 'Не визначено'}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    // Методи детального форматування видалені - повернулися до простого стану
+
+    getSubmetricTitle(submetric) {
+        const titles = {
+            alt_text: 'Альтернативний текст зображень',
+            contrast: 'Контрастність тексту',
+            media_accessibility: 'Доступність медіа',
+            keyboard_navigation: 'Клавіатурна навігація',
+            structured_navigation: 'Структурована навігація',
+            instruction_clarity: 'Зрозумілість інструкцій',
+            input_assistance: 'Допомога при введенні',
+            error_support: 'Підтримка помилок',
+            localization: 'Локалізація контенту'
+        };
+        return titles[submetric] || submetric;
+    }
+
+    getSubmetricDescription(submetric, score) {
+        if (score >= 90) {
+            return '<br><span style="color: #28a745;">Відмінний результат!</span>';
+        } else if (score >= 70) {
+            return '<br><span style="color: #17a2b8;">Добрий результат</span>';
+        } else if (score >= 50) {
+            return '<br><span style="color: #ffc107;">Потребує покращення</span>';
+        } else {
+            return '<br><span style="color: #dc3545;">Критичні проблеми виявлені</span>';
+        }
+    }
+
+    generateRecommendations(results) {
+        let html = '<div class="recommendations">';
+        html += '<h3>💡 Рекомендації для покращення доступності</h3>';
+
+        if (results.recommendations && results.recommendations.length > 0) {
+            html += '<ul>';
+            results.recommendations.forEach(rec => {
+                html += `<li>${rec}</li>`;
+            });
+            html += '</ul>';
+        } else {
+            // Генеруємо рекомендації на основі скорів
+            html += '<ul>';
+            
+            Object.entries(results.metrics).forEach(([key, value]) => {
+                const score = value * 100;
+                if (score < 80) {
+                    html += `<li>${this.getRecommendationForMetric(key, score)}</li>`;
+                }
+            });
+            
+            if (Object.values(results.metrics).every(v => v * 100 >= 80)) {
+                html += '<li>🎉 Відмінна робота! Ваш сайт має високий рівень доступності.</li>';
+                html += '<li>Продовжуйте регулярно тестувати доступність при додаванні нового контенту.</li>';
+            }
+            
+            html += '</ul>';
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    getCategoryTitle(category) {
+        const titles = {
+            perceptibility: '👁️ Сприйнятність',
+            operability: '⌨️ Керованість',
+            understandability: '🧠 Зрозумілість',
+            localization: '🌍 Локалізація'
+        };
+        return titles[category] || category;
+    }
+
+    formatDetailedMetrics(details) {
+        if (typeof details === 'object') {
+            return Object.entries(details)
+                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                .join('<br>');
+        }
+        return details.toString();
+    }
+
+    getRecommendationForMetric(metric, score) {
+        const recommendations = {
+            perceptibility: 'Покращіть альтернативний текст для зображень та контрастність тексту',
+            operability: 'Забезпечте повну підтримку клавіатурної навігації та зрозумілу структуру',
+            understandability: 'Зробіть інструкції більш зрозумілими та покращіть обробку помилок у формах',
+            localization: 'Додайте правильні мовні атрибути та покращіть локалізацію контенту'
+        };
+        return recommendations[metric] || `Покращіть показники для категорії ${metric}`;
+    }
+
+    getScoreClass(score) {
+        if (score >= 90) return 'score-excellent';
+        if (score >= 75) return 'score-good';
+        if (score >= 60) return 'score-fair';
+        if (score >= 40) return 'score-poor';
+        return 'score-critical';
     }
 
     async highlightIssues() {
