@@ -291,8 +291,14 @@ body {
 /* Actions section */
 .actions-section {
     display: flex;
-    gap: 8px;
+    flex-direction: column;
+    gap: 10px;
     margin-bottom: 16px;
+}
+
+.export-buttons {
+    display: flex;
+    gap: 8px;
 }
 
 .action-btn {
@@ -317,9 +323,30 @@ body {
     color: #007bff;
 }
 
+.export-btn {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    border: 2px solid #28a745;
+}
+
 .export-btn:hover {
-    border-color: #28a745;
-    color: #28a745;
+    background: linear-gradient(135deg, #218838, #1ea080);
+    border-color: #218838;
+    color: white;
+    transform: translateY(-1px);
+}
+
+.export-alt-btn {
+    background: linear-gradient(135deg, #17a2b8, #138496);
+    color: white;
+    border: 2px solid #17a2b8;
+}
+
+.export-alt-btn:hover {
+    background: linear-gradient(135deg, #138496, #117a8b);
+    border-color: #138496;
+    color: white;
+    transform: translateY(-1px);
 }
 
 .highlight-btn:hover {

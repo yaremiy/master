@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Accessibility Evaluator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Комплексний аналізатор доступності веб-сторінок з систематичним тестуванням форм",
   "author": "Accessibility Team",
   
@@ -13,6 +13,9 @@
   ],
   
   "host_permissions": [
+    "http://localhost:8001/*",
+    "http://127.0.0.1:8001/*",
+    "http://0.0.0.0:8001/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",
     "http://0.0.0.0:8000/*"
@@ -22,16 +25,6 @@
     "default_popup": "popup/popup.html"
   },
   
-  "content_scripts": [{
-    "matches": ["<all_urls>"],
-    "js": [
-      "utils/helpers.js",
-      "content-scripts/form-tester.js",
-      "content-scripts/analyzer.js"
-    ],
-    "css": ["content-scripts/analyzer.css"],
-    "run_at": "document_idle"
-  }],
   
   "background": {
     "service_worker": "background/background.js"

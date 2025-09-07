@@ -1,18 +1,20 @@
 /**
  * Popup JavaScript для Accessibility Evaluator
- * Управляє UI та комунікацією з content scripts
+ * Використовує Flask API для аналізу доступності
  */
 
 class AccessibilityPopup {
     constructor() {
         this.isAnalyzing = false;
         this.currentResults = null;
+        this.API_BASE_URL = 'http://localhost:8001'; // Flask сервер
         this.init();
     }
 
     init() {
         this.bindEvents();
         this.loadPreviousResults();
+        this.checkServerStatus();
     }
 
     bindEvents() {
@@ -30,6 +32,14 @@ class AccessibilityPopup {
         document.getElementById('export-btn').addEventListener('click', () => {
             this.exportReport();
         });
+
+        // Альтернативний експорт (відкрити в новій вкладці)
+        const exportAltBtn = document.getElementById('export-alt-btn');
+        if (exportAltBtn) {
+            exportAltBtn.addEventListener('click', () => {
+                this.exportReportAsTab();
+            });
+        }
 
         // Підсвічування проблем
         document.getElementById('highlight-issues').addEventListener('click', () => {
@@ -74,50 +84,51 @@ class AccessibilityPopup {
                 throw new Error('Неможливо аналізувати цю сторінку (chrome://, extension://, etc.)');
             }
 
-            // Спочатку перевіряємо чи content script завантажений
-            let results;
-            try {
-                // Спробуємо ping content script
-                await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
-            } catch (error) {
-                // Content script не завантажений, ін'єктуємо його
-                console.log('Content script не знайдено, ін\'єктуємо...');
-                await this.injectContentScript(tab.id);
-                // Чекаємо трохи для ініціалізації
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log(`🔍 Аналізуємо сторінку: ${tab.url}`);
+
+            // Викликаємо Flask API для аналізу
+            const response = await fetch(`${this.API_BASE_URL}/api/evaluate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    url: tab.url
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`HTTP ${response.status}: ${errorData.detail || response.statusText}`);
             }
 
-            // Відправляємо повідомлення content script з timeout
-            results = await Promise.race([
-                chrome.tabs.sendMessage(tab.id, {
-                    action: 'analyze-accessibility',
-                    options: {
-                        includeDetailedAnalysis: true,
-                        testForms: true,
-                        checkImages: true,
-                        testKeyboardNavigation: true
-                    }
-                }),
-                new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Timeout: аналіз займає занадто довго')), 30000)
-                )
-            ]);
-
+            const results = await response.json();
+            
             if (!results) {
                 throw new Error('Не отримано результатів аналізу');
             }
 
-            if (results.error) {
-                throw new Error(`Помилка аналізу: ${results.error}`);
+            if (results.status === 'error') {
+                throw new Error(`Помилка аналізу: ${results.error || 'Невідома помилка'}`);
             }
 
-            this.currentResults = results;
-            this.displayResults(results);
-            this.saveResults(results, tab.url);
+            // Конвертуємо результати Flask API у формат, який очікує UI
+            const convertedResults = this.convertApiResultsToUIFormat(results);
+            
+            this.currentResults = convertedResults;
+            this.displayResults(convertedResults);
+            this.saveResults(convertedResults, tab.url);
 
         } catch (error) {
             console.error('Помилка аналізу:', error);
-            this.showError(error.message);
+            
+            // Перевіряємо чи це помилка з'єднання з сервером
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                this.showError('Не вдалося з\'єднатися з сервером аналізу. Переконайтеся, що Flask сервер запущено на http://localhost:8001');
+            } else {
+                this.showError(error.message);
+            }
         } finally {
             this.setAnalyzing(false);
             this.hideProgress();
@@ -129,37 +140,43 @@ class AccessibilityPopup {
         return !restrictedProtocols.some(protocol => url.startsWith(protocol));
     }
 
-    async injectContentScript(tabId) {
-        try {
-            // Ін'єктуємо всі необхідні файли в правильному порядку
-            const files = [
-                'utils/helpers.js',
-                'content-scripts/metrics/base-metrics.js',
-                'content-scripts/metrics/perceptibility-metrics.js',
-                'content-scripts/metrics/operability-metrics.js',
-                'content-scripts/metrics/understandability-metrics.js',
-                'content-scripts/form-tester.js',
-                'content-scripts/analyzer.js'
-            ];
+    /**
+     * Конвертує результати Flask API у формат, який очікує UI
+     */
+    convertApiResultsToUIFormat(apiResults) {
+        return {
+            totalScore: apiResults.final_score,
+            metrics: {
+                perceptibility: apiResults.subscores.perceptibility,
+                operability: apiResults.subscores.operability,
+                understandability: apiResults.subscores.understandability,
+                localization: apiResults.subscores.localization
+            },
+            detailedMetrics: apiResults.metrics,
+            recommendations: apiResults.recommendations.map(rec => rec.recommendation),
+            issues: this.extractIssuesFromRecommendations(apiResults.recommendations),
+            pageData: {
+                title: apiResults.url,
+                language: 'auto-detected',
+                direction: 'ltr'
+            },
+            qualityLevel: apiResults.quality_level,
+            qualityDescription: apiResults.quality_description,
+            detailedAnalysis: apiResults.detailed_analysis || {}
+        };
+    }
 
-            for (const file of files) {
-                await chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    files: [file]
-                });
-            }
-
-            // Ін'єктуємо CSS
-            await chrome.scripting.insertCSS({
-                target: { tabId: tabId },
-                files: ['content-scripts/analyzer.css']
-            });
-
-            console.log('Content scripts успішно ін\'єктовано');
-        } catch (error) {
-            console.error('Помилка ін\'єкції content script:', error);
-            throw new Error('Не вдалося завантажити аналізатор на цю сторінку');
-        }
+    /**
+     * Витягує проблеми з рекомендацій для підсвічування
+     */
+    extractIssuesFromRecommendations(recommendations) {
+        return recommendations.map(rec => ({
+            severity: rec.priority === 'Високий' ? 'high' : 
+                     rec.priority === 'Середній' ? 'medium' : 'low',
+            description: rec.recommendation,
+            category: rec.category,
+            wcag: rec.wcag_reference
+        }));
     }
 
     setAnalyzing(analyzing) {
@@ -357,20 +374,122 @@ class AccessibilityPopup {
 
         try {
             const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+            
+            console.log('🔄 Генеруємо звіт...');
             const report = this.generateReport(this.currentResults, tab.url);
             
-            // Створюємо та завантажуємо файл
-            const blob = new Blob([report], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
+            if (!report || report.length < 100) {
+                throw new Error('Згенерований звіт порожній або некоректний');
+            }
             
-            await chrome.downloads.download({
-                url: url,
-                filename: `accessibility-report-${new Date().toISOString().split('T')[0]}.html`
+            console.log('📄 Звіт згенеровано, розмір:', report.length, 'символів');
+            
+            // Створюємо blob з правильним MIME типом
+            const blob = new Blob([report], { 
+                type: 'text/html;charset=utf-8' 
             });
             
+            console.log('📦 Blob створено, розмір:', blob.size, 'байт');
+            
+            // Створюємо URL для blob
+            const url = URL.createObjectURL(blob);
+            console.log('🔗 Blob URL створено:', url);
+            
+            // Генеруємо безпечне ім'я файлу
+            const hostname = new URL(tab.url).hostname.replace(/[^a-zA-Z0-9]/g, '-');
+            const timestamp = new Date().toISOString().split('T')[0];
+            const filename = `accessibility-report-${hostname}-${timestamp}.html`;
+            
+            console.log('💾 Завантажуємо файл:', filename);
+            
+            // Завантажуємо файл
+            const downloadId = await chrome.downloads.download({
+                url: url,
+                filename: filename,
+                saveAs: true // Дозволяємо користувачу вибрати місце збереження
+            });
+            
+            console.log('✅ Файл завантажено, ID:', downloadId);
+            
+            // Очищуємо URL після невеликої затримки
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                console.log('🧹 Blob URL очищено');
+            }, 1000);
+            
+            // Показуємо повідомлення про успіх
+            this.showSuccess('Звіт успішно експортовано!');
+            
         } catch (error) {
-            console.error('Помилка експорту:', error);
-            this.showError('Не вдалося експортувати звіт');
+            console.error('❌ Помилка експорту:', error);
+            console.error('Stack trace:', error.stack);
+            
+            // Детальніше повідомлення про помилку
+            let errorMessage = 'Не вдалося експортувати звіт';
+            if (error.message.includes('downloads')) {
+                errorMessage += '. Перевірте дозволи розширення для завантажень.';
+            } else if (error.message.includes('blob')) {
+                errorMessage += '. Помилка створення файлу.';
+            } else {
+                errorMessage += `: ${error.message}`;
+            }
+            
+            this.showError(errorMessage);
+            
+            // Fallback: спробуємо відкрити звіт в новій вкладці
+            try {
+                console.log('🔄 Спробуємо fallback метод...');
+                const report = this.generateReport(this.currentResults, tab.url);
+                const blob = new Blob([report], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                
+                await chrome.tabs.create({ url: url });
+                console.log('✅ Звіт відкрито в новій вкладці');
+                
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (fallbackError) {
+                console.error('❌ Fallback також не спрацював:', fallbackError);
+            }
+        }
+    }
+
+    /**
+     * Альтернативний метод експорту - відкриває звіт у новій вкладці
+     */
+    async exportReportAsTab() {
+        if (!this.currentResults) {
+            this.showError('Немає результатів для експорту');
+            return;
+        }
+
+        try {
+            const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+            
+            console.log('🔄 Генеруємо звіт для нової вкладки...');
+            const report = this.generateReport(this.currentResults, tab.url);
+            
+            if (!report || report.length < 100) {
+                throw new Error('Згенерований звіт порожній або некоректний');
+            }
+            
+            // Створюємо blob та відкриваємо в новій вкладці
+            const blob = new Blob([report], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            
+            const newTab = await chrome.tabs.create({ url: url });
+            console.log('✅ Звіт відкрито в новій вкладці, ID:', newTab.id);
+            
+            // Очищуємо URL через 10 секунд
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                console.log('🧹 Blob URL очищено');
+            }, 10000);
+            
+            this.showSuccess('Звіт відкрито в новій вкладці!');
+            
+        } catch (error) {
+            console.error('❌ Помилка відкриття звіту в новій вкладці:', error);
+            this.showError(`Не вдалося відкрити звіт: ${error.message}`);
         }
     }
 
@@ -384,17 +503,18 @@ class AccessibilityPopup {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Звіт доступності - ${pageUrl}</title>
+                <title>Детальний звіт доступності - ${pageUrl}</title>
                 <style>
                     body { 
                         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                         margin: 0; 
-                        padding: 40px; 
+                        padding: 20px; 
                         background-color: #f8f9fa;
                         line-height: 1.6;
+                        color: #333;
                     }
                     .container {
-                        max-width: 1200px;
+                        max-width: 1400px;
                         margin: 0 auto;
                         background: white;
                         border-radius: 12px;
@@ -402,12 +522,12 @@ class AccessibilityPopup {
                         overflow: hidden;
                     }
                     .header { 
-                        background: linear-gradient(135deg, #007bff, #0056b3);
+                        background: linear-gradient(135deg, #2c3e50, #3498db);
                         color: white;
                         padding: 30px 40px;
                         text-align: center;
                     }
-                    .header h1 { margin: 0 0 20px 0; font-size: 2.5em; }
+                    .header h1 { margin: 0 0 20px 0; font-size: 2.5em; font-weight: 300; }
                     .header p { margin: 5px 0; opacity: 0.9; }
                     .score-badge { 
                         display: inline-block;
@@ -419,115 +539,212 @@ class AccessibilityPopup {
                         margin-top: 20px;
                     }
                     .content { padding: 40px; }
-                    .metrics-grid {
+                    
+                    /* Стилі для детального аналізу */
+                    .metric-section {
+                        background: white;
+                        border: 2px solid #e9ecef;
+                        border-radius: 10px;
+                        padding: 25px;
+                        margin-bottom: 30px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                    }
+                    .metric-section-title {
+                        color: #2c3e50;
+                        margin-bottom: 20px;
+                        font-size: 1.4rem;
+                        border-bottom: 2px solid #ecf0f1;
+                        padding-bottom: 10px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    .metric-score-display {
+                        font-size: 1.2rem;
+                        font-weight: bold;
+                        padding: 8px 16px;
+                        border-radius: 20px;
+                        color: white;
+                    }
+                    
+                    /* Елементи списку */
+                    .element-list {
+                        margin-top: 20px;
+                    }
+                    .element-item {
+                        background: #f8f9fa;
+                        border: 1px solid #e9ecef;
+                        border-radius: 8px;
+                        padding: 15px;
+                        margin-bottom: 15px;
+                        transition: box-shadow 0.2s;
+                    }
+                    .element-item:hover {
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    }
+                    .element-item.correct {
+                        border-left: 4px solid #27ae60;
+                        background: #f0f9f0;
+                    }
+                    .element-item.problematic {
+                        border-left: 4px solid #e74c3c;
+                        background: #fdf2f2;
+                    }
+                    .element-selector {
+                        font-family: 'Courier New', monospace;
+                        font-size: 14px;
+                        color: #2c3e50;
+                        font-weight: bold;
+                        margin-bottom: 8px;
+                        background: #ecf0f1;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        display: inline-block;
+                    }
+                    .element-html {
+                        font-family: 'Courier New', monospace;
+                        font-size: 12px;
+                        background: #f1f3f4;
+                        padding: 10px;
+                        border-radius: 5px;
+                        margin: 8px 0;
+                        overflow-x: auto;
+                        white-space: pre-wrap;
+                        word-break: break-all;
+                        border: 1px solid #ddd;
+                    }
+                    .element-status {
+                        color: #27ae60;
+                        font-size: 14px;
+                        margin-top: 8px;
+                        font-weight: 500;
+                    }
+                    .element-issue {
+                        color: #e74c3c;
+                        font-size: 14px;
+                        margin-top: 8px;
+                        font-weight: 500;
+                    }
+                    
+                    /* Контраст деталі */
+                    .contrast-info {
                         display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-                        gap: 20px;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 10px;
+                        margin-top: 15px;
+                    }
+                    .contrast-detail {
+                        background: #f8f9fa;
+                        padding: 10px;
+                        border-radius: 5px;
+                        font-size: 13px;
+                        border: 1px solid #e9ecef;
+                    }
+                    .color-swatch {
+                        display: inline-block;
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 4px;
+                        border: 1px solid #ccc;
+                        margin-left: 8px;
+                        vertical-align: middle;
+                    }
+                    
+                    /* Статистика */
+                    .score-explanation {
+                        background: #e3f2fd;
+                        border: 1px solid #bbdefb;
+                        border-radius: 6px;
+                        padding: 15px;
+                        margin-bottom: 20px;
+                        font-weight: 500;
+                        color: #1565c0;
+                    }
+                    
+                    /* Кольори скорів */
+                    .score-excellent { background-color: #27ae60; }
+                    .score-good { background-color: #3498db; }
+                    .score-fair { background-color: #f39c12; }
+                    .score-poor { background-color: #e74c3c; }
+                    .score-critical { background-color: #95a5a6; }
+                    
+                    /* Рекомендації */
+                    .recommendations {
+                        background: #fff3cd;
+                        border: 2px solid #ffeaa7;
+                        border-radius: 10px;
+                        padding: 25px;
                         margin: 30px 0;
                     }
-                    .metric-card {
-                        background: #f8f9fa;
-                        border-radius: 8px;
-                        padding: 20px;
-                        border-left: 5px solid #007bff;
-                    }
-                    .metric-title { 
-                        font-weight: bold; 
-                        color: #495057; 
-                        margin-bottom: 10px;
-                        font-size: 1.1em;
-                    }
-                    .metric-score { 
-                        font-size: 2em; 
-                        font-weight: bold; 
-                        color: #28a745; 
-                    }
-                    .metric-details {
-                        margin-top: 15px;
-                        font-size: 0.9em;
-                        color: #6c757d;
-                    }
-                    .section {
-                        margin: 40px 0;
-                        padding: 30px;
-                        background: #f8f9fa;
-                        border-radius: 8px;
-                    }
-                    .section h2 {
-                        color: #495057;
-                        border-bottom: 2px solid #dee2e6;
-                        padding-bottom: 10px;
+                    .recommendations h3 {
+                        color: #856404;
                         margin-bottom: 20px;
+                        font-size: 1.3rem;
                     }
-                    .detail-item {
+                    .recommendation-item {
                         background: white;
-                        margin: 10px 0;
+                        border-left: 4px solid #f39c12;
                         padding: 15px;
-                        border-radius: 6px;
-                        border-left: 4px solid #007bff;
+                        margin-bottom: 15px;
+                        border-radius: 5px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
                     }
-                    .detail-label {
-                        font-weight: bold;
-                        color: #495057;
+                    .recommendation-category {
+                        font-weight: 600;
+                        color: #e67e22;
+                        font-size: 0.9rem;
                         margin-bottom: 5px;
                     }
-                    .detail-value {
-                        color: #6c757d;
+                    .recommendation-text {
+                        color: #2c3e50;
+                        margin-bottom: 5px;
                     }
-                    .recommendations {
-                        background: #e3f2fd;
-                        border-left: 4px solid #2196f3;
-                        padding: 20px;
-                        border-radius: 6px;
-                        margin: 20px 0;
+                    .recommendation-wcag {
+                        font-size: 0.8rem;
+                        color: #666;
+                        font-style: italic;
                     }
-                    .recommendations h3 {
-                        color: #1976d2;
-                        margin-top: 0;
-                    }
-                    .recommendations ul {
-                        margin: 0;
-                        padding-left: 20px;
-                    }
-                    .recommendations li {
-                        margin: 8px 0;
-                        color: #424242;
-                    }
+                    
                     .footer {
                         text-align: center;
-                        padding: 20px;
+                        padding: 30px;
                         color: #6c757d;
                         font-size: 0.9em;
                         border-top: 1px solid #dee2e6;
                         margin-top: 40px;
+                        background: #f8f9fa;
                     }
-                    .score-excellent { color: #28a745; }
-                    .score-good { color: #17a2b8; }
-                    .score-fair { color: #ffc107; }
-                    .score-poor { color: #fd7e14; }
-                    .score-critical { color: #dc3545; }
+                    
+                    /* Responsive */
+                    @media (max-width: 768px) {
+                        .content { padding: 20px; }
+                        .header h1 { font-size: 2rem; }
+                        .contrast-info { grid-template-columns: 1fr; }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>🔍 Звіт доступності веб-сайту</h1>
+                        <h1>🔍 Детальний звіт доступності</h1>
                         <p><strong>URL:</strong> ${pageUrl}</p>
                         <p><strong>Дата аналізу:</strong> ${date}</p>
+                        <p><strong>Рівень якості:</strong> ${results.qualityLevel || 'Невизначено'}</p>
                         <div class="score-badge">
                             Загальний скор: ${totalScore}%
                         </div>
                     </div>
                     
                     <div class="content">
-                        ${this.generateMetricsSection(results)}
-                        ${this.generateDetailedAnalysis(results)}
-                        ${this.generateRecommendations(results)}
+                        ${this.generateDetailedMetricsAnalysis(results)}
+                        ${this.generateDetailedRecommendations(results)}
                     </div>
                     
                     <div class="footer">
-                        <p>Згенеровано Accessibility Evaluator v1.0.0 • ${new Date().toLocaleString('uk-UA')}</p>
-                        <p>Аналіз базується на принципах WCAG 2.1 та науковій методології оцінки доступності</p>
+                        <p><strong>Згенеровано Accessibility Evaluator v1.0.0</strong></p>
+                        <p>${new Date().toLocaleString('uk-UA')}</p>
+                        <p>Аналіз базується на принципах WCAG 2.1 та науковій методології оцінки доступності ISO 25023</p>
+                        <p>Детальний аналіз включає перевірку всіх елементів сторінки з конкретними рекомендаціями</p>
                     </div>
                 </div>
             </body>
@@ -535,63 +752,345 @@ class AccessibilityPopup {
         `;
     }
 
-    generateMetricsSection(results) {
-        const metricsInfo = {
-            perceptibility: {
-                title: '👁️ Сприйнятність (Perceptibility)',
-                description: 'Наскільки легко користувачі можуть сприймати інформацію'
-            },
-            operability: {
-                title: '⌨️ Керованість (Operability)', 
-                description: 'Наскільки легко користувачі можуть взаємодіяти з інтерфейсом'
-            },
-            understandability: {
-                title: '🧠 Зрозумілість (Understandability)',
-                description: 'Наскільки легко користувачі можуть зрозуміти інформацію та інтерфейс'
-            },
-            localization: {
-                title: '🌍 Локалізація (Localization)',
-                description: 'Наскільки добре сайт адаптований для різних мов та культур'
-            }
-        };
+    /**
+     * Генерує детальний аналіз всіх метрик з елементами
+     */
+    generateDetailedMetricsAnalysis(results) {
+        const detailedAnalysis = results.detailedAnalysis || {};
+        let html = '';
 
-        let html = '<h2>📊 Детальні метрики доступності</h2>';
-        html += '<div class="metrics-grid">';
+        // Перцептивність
+        html += this.generateMetricSection(
+            '🔍 Перцептивність', 
+            results.metrics.perceptibility, 
+            detailedAnalysis,
+            ['alt_text', 'contrast', 'media_accessibility']
+        );
 
-        Object.entries(results.metrics).forEach(([key, value]) => {
-            const score = (value * 100).toFixed(1);
-            const info = metricsInfo[key];
-            const scoreClass = this.getScoreClass(parseFloat(score));
-            
-            html += `
-                <div class="metric-card">
-                    <div class="metric-title">${info?.title || key}</div>
-                    <div class="metric-score ${scoreClass}">${score}%</div>
-                    <div class="metric-details">${info?.description || ''}</div>
+        // Керованість
+        html += this.generateMetricSection(
+            '⌨️ Керованість', 
+            results.metrics.operability, 
+            detailedAnalysis,
+            ['keyboard_navigation', 'structured_navigation']
+        );
+
+        // Зрозумілість
+        html += this.generateMetricSection(
+            '💡 Зрозумілість', 
+            results.metrics.understandability, 
+            detailedAnalysis,
+            ['instruction_clarity', 'input_assistance', 'error_support']
+        );
+
+        // Локалізація
+        html += this.generateMetricSection(
+            '🌍 Локалізація', 
+            results.metrics.localization, 
+            detailedAnalysis,
+            ['localization']
+        );
+
+        return html;
+    }
+
+    /**
+     * Генерує секцію для конкретної метрики
+     */
+    generateMetricSection(title, score, detailedAnalysis, subMetrics) {
+        const scorePercent = (score * 100).toFixed(1);
+        const scoreClass = this.getScoreClass(parseFloat(scorePercent));
+        
+        let html = `
+            <div class="metric-section">
+                <div class="metric-section-title">
+                    <span>${title} (${scorePercent}%)</span>
+                    <span class="metric-score-display ${scoreClass}">${scorePercent}%</span>
                 </div>
-            `;
+        `;
+
+        // Генеруємо деталі для кожної підметрики
+        subMetrics.forEach(subMetric => {
+            const details = detailedAnalysis[subMetric];
+            if (details) {
+                html += this.generateSubMetricDetails(subMetric, details);
+            }
         });
 
         html += '</div>';
         return html;
     }
 
-    generateDetailedAnalysis(results) {
-        let html = '<div class="section">';
-        html += '<h2>🔍 Детальний аналіз</h2>';
+    /**
+     * Генерує деталі для підметрики
+     */
+    generateSubMetricDetails(subMetric, details) {
+        const title = this.getSubMetricTitle(subMetric);
+        let html = `<h4>${title}</h4>`;
 
-        // Статистика сторінки
-        if (results.pageData) {
+        // Пояснення скору
+        if (details.score_explanation) {
+            html += `<div class="score-explanation">${details.score_explanation}</div>`;
+        }
+
+        // Проблемні елементи
+        if (details.problematic_images && details.problematic_images.length > 0) {
+            html += this.generateProblematicElements('❌ Проблемні зображення', details.problematic_images);
+        }
+        if (details.problematic_elements && details.problematic_elements.length > 0) {
+            html += this.generateProblematicElements('❌ Проблемні елементи', details.problematic_elements);
+        }
+        if (details.problematic_headings && details.problematic_headings.length > 0) {
+            html += this.generateProblematicElements('❌ Проблемні заголовки', details.problematic_headings);
+        }
+        if (details.problematic_fields && details.problematic_fields.length > 0) {
+            html += this.generateProblematicElements('❌ Проблемні поля', details.problematic_fields);
+        }
+        if (details.problematic_forms && details.problematic_forms.length > 0) {
+            html += this.generateProblematicForms('❌ Проблемні форми', details.problematic_forms);
+        }
+        if (details.problematic_media && details.problematic_media.length > 0) {
+            html += this.generateProblematicElements('❌ Проблемні медіа', details.problematic_media);
+        }
+        if (details.problematic_instructions && details.problematic_instructions.length > 0) {
+            html += this.generateProblematicElements('❌ Незрозумілі інструкції', details.problematic_instructions);
+        }
+
+        // Правильні елементи
+        if (details.correct_images_list && details.correct_images_list.length > 0) {
+            html += this.generateCorrectElements('✅ Правильні зображення', details.correct_images_list);
+        }
+        if (details.correct_elements_list && details.correct_elements_list.length > 0) {
+            html += this.generateCorrectElements('✅ Правильні елементи', details.correct_elements_list);
+        }
+        if (details.correct_headings_list && details.correct_headings_list.length > 0) {
+            html += this.generateCorrectElements('✅ Правильні заголовки', details.correct_headings_list);
+        }
+        if (details.assisted_fields_list && details.assisted_fields_list.length > 0) {
+            html += this.generateCorrectElements('✅ Поля з допомогою', details.assisted_fields_list);
+        }
+        if (details.supported_forms_list && details.supported_forms_list.length > 0) {
+            html += this.generateCorrectForms('✅ Форми з хорошою підтримкою', details.supported_forms_list);
+        }
+        if (details.accessible_media_list && details.accessible_media_list.length > 0) {
+            html += this.generateCorrectElements('✅ Доступні медіа', details.accessible_media_list);
+        }
+        if (details.clear_instructions_list && details.clear_instructions_list.length > 0) {
+            html += this.generateCorrectElements('✅ Зрозумілі інструкції', details.clear_instructions_list);
+        }
+        if (details.accessible_elements_list && details.accessible_elements_list.length > 0) {
+            html += this.generateCorrectElements('✅ Доступні елементи', details.accessible_elements_list);
+        }
+
+        // Локалізація
+        if (details.detected_languages && details.detected_languages.length > 0) {
+            html += this.generateLanguageDetails('✅ Виявлені мови', details.detected_languages);
+        }
+        if (details.missing_languages && details.missing_languages.length > 0) {
+            html += this.generateLanguageDetails('⚠️ Рекомендовані мови', details.missing_languages);
+        }
+
+        return html;
+    }
+
+    /**
+     * Генерує список проблемних елементів
+     */
+    generateProblematicElements(title, elements) {
+        let html = `<h5 style="color: #e74c3c; margin-top: 20px;">${title} (${elements.length}):</h5>`;
+        html += '<div class="element-list">';
+        
+        elements.forEach(element => {
             html += `
-                <div class="detail-item">
-                    <div class="detail-label">📄 Статистика сторінки</div>
-                    <div class="detail-value">
-                        <p><strong>Заголовок:</strong> ${results.pageData.title || 'Не вказано'}</p>
-                        <p><strong>Мова:</strong> ${results.pageData.language || 'Не визначено'}</p>
-                        <p><strong>Напрямок тексту:</strong> ${results.pageData.direction || 'Не визначено'}</p>
+                <div class="element-item problematic">
+                    <div class="element-selector">${element.selector || 'Невідомий селектор'}</div>
+                    <div class="element-html">${this.escapeHtml(element.html || 'HTML недоступний')}</div>
+                    <div class="element-issue"><strong>Проблема:</strong> ${element.issue || element.rule || 'Невідома проблема'}</div>
+            `;
+            
+            // Додаткова інформація для контрасту
+            if (element.contrast_ratio) {
+                html += `
+                    <div class="contrast-info">
+                        <div class="contrast-detail">
+                            <strong>Поточний контраст:</strong> ${element.contrast_ratio}
+                        </div>
+                        <div class="contrast-detail">
+                            <strong>Необхідний:</strong> ${element.required_ratio || 'Невідомо'}
+                        </div>
+                        <div class="contrast-detail">
+                            <strong>Колір тексту:</strong> ${element.foreground || 'Невідомо'}
+                            ${element.foreground ? `<span class="color-swatch" style="background-color: ${element.foreground}"></span>` : ''}
+                        </div>
+                        <div class="contrast-detail">
+                            <strong>Колір фону:</strong> ${element.background || 'Невідомо'}
+                            ${element.background ? `<span class="color-swatch" style="background-color: ${element.background}"></span>` : ''}
+                        </div>
                     </div>
+                `;
+            }
+            
+            html += '</div>';
+        });
+        
+        html += '</div>';
+        return html;
+    }
+
+    /**
+     * Генерує список правильних елементів
+     */
+    generateCorrectElements(title, elements) {
+        let html = `<h5 style="color: #27ae60; margin-top: 20px;">${title} (${elements.length}):</h5>`;
+        html += '<div class="element-list">';
+        
+        // Показуємо максимум 10 елементів для економії місця
+        const displayElements = elements.slice(0, 10);
+        
+        displayElements.forEach(element => {
+            html += `
+                <div class="element-item correct">
+                    <div class="element-selector">${element.selector || 'Невідомий селектор'}</div>
+                    <div class="element-html">${this.escapeHtml(element.html || 'HTML недоступний')}</div>
+                    <div class="element-status"><strong>Статус:</strong> ${element.status || element.alt_text || 'Правильний елемент'}</div>
+            `;
+            
+            // Додаткова інформація для зображень
+            if (element.alt_text) {
+                html += `<div class="element-status"><strong>Alt текст:</strong> "${element.alt_text}"</div>`;
+            }
+            
+            // Додаткова інформація для медіа
+            if (element.type && element.platform) {
+                html += `<div class="element-status"><strong>Тип:</strong> ${element.type} (${element.platform})</div>`;
+            }
+            if (element.title) {
+                html += `<div class="element-status"><strong>Назва:</strong> ${element.title}</div>`;
+            }
+            if (element.src) {
+                const shortSrc = element.src.length > 80 ? element.src.substring(0, 80) + '...' : element.src;
+                html += `<div class="element-status"><strong>URL:</strong> ${shortSrc}</div>`;
+            }
+            
+            html += '</div>';
+        });
+        
+        if (elements.length > 10) {
+            html += `<p style="text-align: center; color: #666; margin-top: 10px;">... та ще ${elements.length - 10} елементів</p>`;
+        }
+        
+        html += '</div>';
+        return html;
+    }
+
+    /**
+     * Генерує список проблемних форм
+     */
+    generateProblematicForms(title, forms) {
+        let html = `<h5 style="color: #e74c3c; margin-top: 20px;">${title} (${forms.length}):</h5>`;
+        
+        forms.forEach(form => {
+            const qualityScore = (typeof form.quality_score === 'number' && !isNaN(form.quality_score)) 
+                ? (form.quality_score * 100).toFixed(1) 
+                : '0.0';
+            
+            html += `
+                <div style="margin: 15px 0; padding: 15px; background: #ffeaea; border-radius: 8px; border-left: 4px solid #e74c3c;">
+                    <h6 style="margin: 0 0 10px 0; color: #e74c3c;">📋 ${form.selector || 'form'}</h6>
+                    <p><strong>Загальна якість:</strong> ${qualityScore}%</p>
+                    <p><strong>Проблеми:</strong> ${form.issue || form.features || 'Невідомі проблеми'}</p>
                 </div>
             `;
+        });
+        
+        return html;
+    }
+
+    /**
+     * Генерує список правильних форм
+     */
+    generateCorrectForms(title, forms) {
+        let html = `<h5 style="color: #27ae60; margin-top: 20px;">${title} (${forms.length}):</h5>`;
+        
+        forms.forEach(form => {
+            const qualityScore = (typeof form.quality_score === 'number' && !isNaN(form.quality_score)) 
+                ? (form.quality_score * 100).toFixed(1) 
+                : '0.0';
+            
+            html += `
+                <div style="margin: 15px 0; padding: 15px; background: #e8f5e8; border-radius: 8px; border-left: 4px solid #27ae60;">
+                    <h6 style="margin: 0 0 10px 0; color: #27ae60;">📋 ${form.selector || 'form'}</h6>
+                    <p><strong>Загальна якість:</strong> ${qualityScore}%</p>
+                    <p><strong>Функції:</strong> ${form.features || 'Хороша підтримка помилок'}</p>
+                </div>
+            `;
+        });
+        
+        return html;
+    }
+
+    /**
+     * Генерує деталі мов
+     */
+    generateLanguageDetails(title, languages) {
+        let html = `<h5 style="margin-top: 20px;">${title} (${languages.length}):</h5>`;
+        html += '<div class="element-list">';
+        
+        languages.forEach(lang => {
+            const isDetected = title.includes('Виявлені');
+            html += `
+                <div class="element-item ${isDetected ? 'correct' : ''}">
+                    <div class="element-status"><strong>Мова:</strong> ${lang.name} (${lang.code})</div>
+                    <div class="element-status"><strong>Вага в розрахунку:</strong> ${(lang.weight * 100).toFixed(1)}%</div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        return html;
+    }
+
+    /**
+     * Генерує детальні рекомендації
+     */
+    generateDetailedRecommendations(results) {
+        let html = '<div class="recommendations">';
+        html += '<h3>💡 Детальні рекомендації для покращення доступності</h3>';
+
+        if (results.recommendations && results.recommendations.length > 0) {
+            results.recommendations.forEach(rec => {
+                html += `
+                    <div class="recommendation-item">
+                        <div class="recommendation-category">${rec.category || 'Загальне'} - ${rec.priority || 'Середній'} пріоритет</div>
+                        <div class="recommendation-text">${rec.recommendation || rec}</div>
+                        <div class="recommendation-wcag">WCAG: ${rec.wcag_reference || 'Не вказано'}</div>
+                    </div>
+                `;
+            });
+        } else {
+            // Генеруємо рекомендації на основі скорів
+            Object.entries(results.metrics).forEach(([key, value]) => {
+                const score = value * 100;
+                if (score < 80) {
+                    html += `
+                        <div class="recommendation-item">
+                            <div class="recommendation-category">${this.getCategoryTitle(key)} - Високий пріоритет</div>
+                            <div class="recommendation-text">${this.getRecommendationForMetric(key, score)}</div>
+                            <div class="recommendation-wcag">WCAG: Загальні принципи доступності</div>
+                        </div>
+                    `;
+                }
+            });
+            
+            if (Object.values(results.metrics).every(v => v * 100 >= 80)) {
+                html += `
+                    <div class="recommendation-item">
+                        <div class="recommendation-category">Загальне - Низький пріоритет</div>
+                        <div class="recommendation-text">🎉 Відмінна робота! Ваш сайт має високий рівень доступності. Продовжуйте регулярно тестувати доступність при додаванні нового контенту.</div>
+                        <div class="recommendation-wcag">WCAG: Підтримка високих стандартів</div>
+                    </div>
+                `;
+            }
         }
 
         html += '</div>';
@@ -600,17 +1099,17 @@ class AccessibilityPopup {
 
     // Методи детального форматування видалені - повернулися до простого стану
 
-    getSubmetricTitle(submetric) {
+    getSubMetricTitle(submetric) {
         const titles = {
-            alt_text: 'Альтернативний текст зображень',
-            contrast: 'Контрастність тексту',
-            media_accessibility: 'Доступність медіа',
-            keyboard_navigation: 'Клавіатурна навігація',
-            structured_navigation: 'Структурована навігація',
-            instruction_clarity: 'Зрозумілість інструкцій',
-            input_assistance: 'Допомога при введенні',
-            error_support: 'Підтримка помилок',
-            localization: 'Локалізація контенту'
+            alt_text: '🖼️ Альтернативний текст зображень',
+            contrast: '🎨 Контрастність тексту',
+            media_accessibility: '🎬 Доступність медіа',
+            keyboard_navigation: '⌨️ Клавіатурна навігація',
+            structured_navigation: '📋 Структурована навігація',
+            instruction_clarity: '📝 Зрозумілість інструкцій',
+            input_assistance: '🆘 Допомога при введенні',
+            error_support: '⚠️ Підтримка помилок',
+            localization: '🌍 Локалізація контенту'
         };
         return titles[submetric] || submetric;
     }
@@ -698,18 +1197,85 @@ class AccessibilityPopup {
     }
 
     async highlightIssues() {
+        if (!this.currentResults || !this.currentResults.issues) {
+            this.showError('Немає результатів для підсвічування проблем');
+            return;
+        }
+
         try {
             const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
             
-            await chrome.tabs.sendMessage(tab.id, {
-                action: 'highlight-issues',
-                issues: this.currentResults?.issues || []
+            // Ін'єктуємо простий скрипт для підсвічування проблем
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: this.highlightIssuesOnPage,
+                args: [this.currentResults.issues]
             });
             
         } catch (error) {
             console.error('Помилка підсвічування:', error);
-            this.showError('Не вдалося підсвітити проблеми');
+            this.showError('Не вдалося підсвітити проблеми на сторінці');
         }
+    }
+
+    /**
+     * Функція для ін'єкції - підсвічує проблеми на сторінці
+     */
+    highlightIssuesOnPage(issues) {
+        // Видаляємо попередні підсвічування
+        document.querySelectorAll('.accessibility-highlight').forEach(el => {
+            el.classList.remove('accessibility-highlight');
+        });
+
+        // Додаємо стилі для підсвічування
+        if (!document.getElementById('accessibility-highlight-styles')) {
+            const style = document.createElement('style');
+            style.id = 'accessibility-highlight-styles';
+            style.textContent = `
+                .accessibility-highlight {
+                    outline: 3px solid #ff6b6b !important;
+                    outline-offset: 2px !important;
+                    background-color: rgba(255, 107, 107, 0.1) !important;
+                }
+                .accessibility-highlight-tooltip {
+                    position: absolute;
+                    background: #333;
+                    color: white;
+                    padding: 8px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    z-index: 10000;
+                    max-width: 300px;
+                    word-wrap: break-word;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Підсвічуємо елементи на основі категорій проблем
+        issues.forEach(issue => {
+            let selector = '';
+            
+            // Визначаємо селектори на основі категорії проблеми
+            if (issue.category === 'Перцептивність' || issue.description.includes('зображен')) {
+                selector = 'img:not([alt]), img[alt=""]';
+            } else if (issue.category === 'Керованість' || issue.description.includes('клавіатур')) {
+                selector = 'a:not([href]), button:not([type]), input:not([type])';
+            } else if (issue.category === 'Зрозумілість' || issue.description.includes('форм')) {
+                selector = 'form, input, textarea, select';
+            } else if (issue.category === 'Локалізація' || issue.description.includes('мов')) {
+                selector = 'html:not([lang]), [lang=""]';
+            }
+
+            if (selector) {
+                document.querySelectorAll(selector).forEach(element => {
+                    element.classList.add('accessibility-highlight');
+                    element.title = `Проблема доступності: ${issue.description}`;
+                });
+            }
+        });
+
+        console.log(`Підсвічено проблеми доступності: ${issues.length} категорій`);
     }
 
     showMetricDetails(metric) {
@@ -722,10 +1288,63 @@ class AccessibilityPopup {
         console.log('Відкрити налаштування');
     }
 
+    /**
+     * Перевіряє стан Flask сервера
+     */
+    async checkServerStatus() {
+        try {
+            const response = await fetch(`${this.API_BASE_URL}/api/health`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+            
+            if (response.ok) {
+                console.log('✅ Flask сервер доступний');
+                this.showServerStatus('online');
+            } else {
+                throw new Error(`Server responded with ${response.status}`);
+            }
+        } catch (error) {
+            console.warn('⚠️ Flask сервер недоступний:', error.message);
+            this.showServerStatus('offline');
+        }
+    }
+
+    /**
+     * Показує статус сервера в UI
+     */
+    showServerStatus(status) {
+        const statusElement = document.getElementById('server-status');
+        if (!statusElement) {
+            // Створюємо індикатор статусу якщо його немає
+            const indicator = document.createElement('div');
+            indicator.id = 'server-status';
+            indicator.style.cssText = `
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                z-index: 1000;
+            `;
+            document.body.appendChild(indicator);
+        }
+        
+        const indicator = document.getElementById('server-status');
+        if (status === 'online') {
+            indicator.style.backgroundColor = '#28a745';
+            indicator.title = 'Сервер доступний';
+        } else {
+            indicator.style.backgroundColor = '#dc3545';
+            indicator.title = 'Сервер недоступний. Запустіть Flask сервер на порту 8001';
+        }
+    }
+
     openHelp() {
-        // TODO: Відкрити сторінку допомоги
+        // Відкриваємо веб-інтерфейс Flask сервера
         chrome.tabs.create({
-            url: 'https://github.com/your-repo/accessibility-evaluator/wiki'
+            url: `${this.API_BASE_URL}/`
         });
     }
 
@@ -733,6 +1352,33 @@ class AccessibilityPopup {
         document.getElementById('results-container').style.display = 'none';
         document.getElementById('error-container').style.display = 'block';
         document.getElementById('error-text').textContent = message;
+    }
+
+    showSuccess(message) {
+        // Створюємо тимчасове повідомлення про успіх
+        const successDiv = document.createElement('div');
+        successDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 10000;
+            font-size: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        `;
+        successDiv.textContent = message;
+        document.body.appendChild(successDiv);
+        
+        // Видаляємо через 3 секунди
+        setTimeout(() => {
+            if (successDiv.parentNode) {
+                successDiv.parentNode.removeChild(successDiv);
+            }
+        }, 3000);
     }
 
     async loadPreviousResults() {
@@ -767,6 +1413,16 @@ class AccessibilityPopup {
 
     getUrlKey(url) {
         return btoa(url).replace(/[^a-zA-Z0-9]/g, '').substring(0, 50);
+    }
+
+    /**
+     * Екранує HTML для безпечного відображення
+     */
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
