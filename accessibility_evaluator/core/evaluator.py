@@ -1785,7 +1785,11 @@ class AccessibilityEvaluator:
         for lang in detected_languages:
             total_score += lang['weight']
         
-        score_explanation = f"Скор: {total_score:.3f} (виявлено {len(detected_languages)} мов)"
+        # Створюємо список кодів мов для відображення
+        language_codes = [lang['code'] for lang in detected_languages]
+        codes_str = ', '.join(language_codes) if language_codes else 'немає'
+        
+        score_explanation = f"Скор: {total_score:.3f} (виявлено {len(detected_languages)} мов: {codes_str})"
         
         return {
             'detected_languages': detected_languages,

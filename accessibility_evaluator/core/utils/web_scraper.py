@@ -725,7 +725,8 @@ class WebScraper:
                         if (el.disabled) return { focusable: false, reason: 'Елемент відключений (disabled)' };
                         
                         const style = window.getComputedStyle(el);
-                        if (style.display === "none") return { focusable: false, reason: 'display: none' };
+                        // Спеціальна обробка для display: none - вважаємо їх правильно прихованими
+                        if (style.display === "none") return { focusable: true, reason: 'Правильно прихований (display: none)' };
                         if (style.visibility === "hidden") return { focusable: false, reason: 'visibility: hidden' };
                         
                         if (el.hasAttribute("aria-hidden") && el.getAttribute("aria-hidden") === "true") {

@@ -759,6 +759,14 @@ class AccessibilityPopup {
         const detailedAnalysis = results.detailedAnalysis || {};
         let html = '';
 
+        // Загальне пояснення про фокус звіту
+        html += `
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 15px; margin-bottom: 25px; font-size: 14px;">
+                <strong>💡 Фокус звіту:</strong> Нижче показані тільки елементи, які потребують покращення. 
+                Успішно перевірені елементи підраховані в загальному скорі та відображені в підсумку.
+            </div>
+        `;
+
         // Перцептивність
         html += this.generateMetricSection(
             '🔍 Перцептивність', 
@@ -856,39 +864,11 @@ class AccessibilityPopup {
             html += this.generateProblematicElements('❌ Незрозумілі інструкції', details.problematic_instructions);
         }
 
-        // Правильні елементи
-        if (details.correct_images_list && details.correct_images_list.length > 0) {
-            html += this.generateCorrectElements('✅ Правильні зображення', details.correct_images_list);
-        }
-        if (details.correct_elements_list && details.correct_elements_list.length > 0) {
-            html += this.generateCorrectElements('✅ Правильні елементи', details.correct_elements_list);
-        }
-        if (details.correct_headings_list && details.correct_headings_list.length > 0) {
-            html += this.generateCorrectElements('✅ Правильні заголовки', details.correct_headings_list);
-        }
-        if (details.assisted_fields_list && details.assisted_fields_list.length > 0) {
-            html += this.generateCorrectElements('✅ Поля з допомогою', details.assisted_fields_list);
-        }
-        if (details.supported_forms_list && details.supported_forms_list.length > 0) {
-            html += this.generateCorrectForms('✅ Форми з хорошою підтримкою', details.supported_forms_list);
-        }
-        if (details.accessible_media_list && details.accessible_media_list.length > 0) {
-            html += this.generateCorrectElements('✅ Доступні медіа', details.accessible_media_list);
-        }
-        if (details.clear_instructions_list && details.clear_instructions_list.length > 0) {
-            html += this.generateCorrectElements('✅ Зрозумілі інструкції', details.clear_instructions_list);
-        }
-        if (details.accessible_elements_list && details.accessible_elements_list.length > 0) {
-            html += this.generateCorrectElements('✅ Доступні елементи', details.accessible_elements_list);
-        }
-
-        // Локалізація
-        if (details.detected_languages && details.detected_languages.length > 0) {
-            html += this.generateLanguageDetails('✅ Виявлені мови', details.detected_languages);
-        }
-        if (details.missing_languages && details.missing_languages.length > 0) {
-            html += this.generateLanguageDetails('⚠️ Рекомендовані мови', details.missing_languages);
-        }
+        // Показуємо тільки проблемні елементи для фокусу на покращеннях
+        // Правильні елементи приховано для кращої читабельності звіту
+        
+        // Додаємо підсумок успішних перевірок
+        html += this.generateSuccessSummary(details);
 
         return html;
     }
@@ -1039,14 +1019,63 @@ class AccessibilityPopup {
         languages.forEach(lang => {
             const isDetected = title.includes('Виявлені');
             html += `
-                <div class="element-item ${isDetected ? 'correct' : ''}">
+                <div class="element-item ${isDetected ? 'correct' : 'problematic'}">
                     <div class="element-status"><strong>Мова:</strong> ${lang.name} (${lang.code})</div>
-                    <div class="element-status"><strong>Вага в розрахунку:</strong> ${(lang.weight * 100).toFixed(1)}%</div>
+                    <div class="element-status"><strong>Потенційне покращення:</strong> +${(lang.weight * 100).toFixed(1)}% до скору</div>
                 </div>
             `;
         });
         
         html += '</div>';
+        return html;
+    }
+
+    /**
+     * Генерує підсумок успішних перевірок
+     */
+    generateSuccessSummary(details) {
+        const successCounts = {
+            images: details.correct_images_list?.length || 0,
+            elements: details.correct_elements_list?.length || 0,
+            headings: details.correct_headings_list?.length || 0,
+            fields: details.assisted_fields_list?.length || 0,
+            forms: details.supported_forms_list?.length || 0,
+            media: details.accessible_media_list?.length || 0,
+            instructions: details.clear_instructions_list?.length || 0,
+            navigation: details.accessible_elements_list?.length || 0,
+            languages: details.detected_languages?.length || 0
+        };
+
+        const totalSuccess = Object.values(successCounts).reduce((sum, count) => sum + count, 0);
+        
+        if (totalSuccess === 0) {
+            return '';
+        }
+
+        let html = `
+            <div style="margin-top: 30px; padding: 20px; background: #e8f5e8; border-radius: 8px; border-left: 4px solid #27ae60;">
+                <h5 style="color: #27ae60; margin-top: 0;">✅ Підсумок успішних перевірок</h5>
+                <p style="color: #155724; margin-bottom: 15px;">
+                    <strong>Загалом елементів пройшло перевірку: ${totalSuccess}</strong>
+                </p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 14px;">
+        `;
+
+        if (successCounts.images > 0) html += `<div>🖼️ Зображення з alt-текстом: <strong>${successCounts.images}</strong></div>`;
+        if (successCounts.elements > 0) html += `<div>🎨 Елементи з правильним контрастом: <strong>${successCounts.elements}</strong></div>`;
+        if (successCounts.headings > 0) html += `<div>📋 Правильні заголовки: <strong>${successCounts.headings}</strong></div>`;
+        if (successCounts.fields > 0) html += `<div>🆘 Поля з допомогою: <strong>${successCounts.fields}</strong></div>`;
+        if (successCounts.forms > 0) html += `<div>⚠️ Форми з підтримкою помилок: <strong>${successCounts.forms}</strong></div>`;
+        if (successCounts.media > 0) html += `<div>🎬 Доступні медіа: <strong>${successCounts.media}</strong></div>`;
+        if (successCounts.instructions > 0) html += `<div>📝 Зрозумілі інструкції: <strong>${successCounts.instructions}</strong></div>`;
+        if (successCounts.navigation > 0) html += `<div>⌨️ Доступна навігація: <strong>${successCounts.navigation}</strong></div>`;
+        if (successCounts.languages > 0) html += `<div>🌍 Підтримувані мови: <strong>${successCounts.languages}</strong></div>`;
+
+        html += `
+                </div>
+            </div>
+        `;
+
         return html;
     }
 
@@ -1063,31 +1092,34 @@ class AccessibilityPopup {
                     <div class="recommendation-item">
                         <div class="recommendation-category">${rec.category || 'Загальне'} - ${rec.priority || 'Середній'} пріоритет</div>
                         <div class="recommendation-text">${rec.recommendation || rec}</div>
-                        <div class="recommendation-wcag">WCAG: ${rec.wcag_reference || 'Не вказано'}</div>
                     </div>
                 `;
             });
-        } else {
-            // Генеруємо рекомендації на основі скорів
+        }
+
+        // Рекомендації про мови видалено - не показуємо їх у загальних рекомендаціях
+
+        if (!results.recommendations || results.recommendations.length === 0) {
+            // Генеруємо рекомендації на основі скорів (крім локалізації, яка додається окремо)
             Object.entries(results.metrics).forEach(([key, value]) => {
                 const score = value * 100;
-                if (score < 80) {
+                if (score < 80 && key !== 'localization') { // Виключаємо локалізацію
                     html += `
                         <div class="recommendation-item">
                             <div class="recommendation-category">${this.getCategoryTitle(key)} - Високий пріоритет</div>
                             <div class="recommendation-text">${this.getRecommendationForMetric(key, score)}</div>
-                            <div class="recommendation-wcag">WCAG: Загальні принципи доступності</div>
                         </div>
                     `;
                 }
             });
             
-            if (Object.values(results.metrics).every(v => v * 100 >= 80)) {
+            // Перевіряємо чи всі метрики (крім локалізації) мають високий скор
+            const nonLocalizationMetrics = Object.entries(results.metrics).filter(([key]) => key !== 'localization');
+            if (nonLocalizationMetrics.every(([key, value]) => value * 100 >= 80)) {
                 html += `
                     <div class="recommendation-item">
                         <div class="recommendation-category">Загальне - Низький пріоритет</div>
                         <div class="recommendation-text">🎉 Відмінна робота! Ваш сайт має високий рівень доступності. Продовжуйте регулярно тестувати доступність при додаванні нового контенту.</div>
-                        <div class="recommendation-wcag">WCAG: Підтримка високих стандартів</div>
                     </div>
                 `;
             }

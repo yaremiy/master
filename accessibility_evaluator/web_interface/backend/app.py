@@ -945,6 +945,11 @@ async def read_root():
                     <div class="detailed-metrics">
                         <h3 style="margin-bottom: 20px; color: #2c3e50;">Детальний звіт по метриках</h3>
                         
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 15px; margin-bottom: 25px; font-size: 14px;">
+                            <strong>💡 Фокус звіту:</strong> Нижче показані тільки елементи, які потребують покращення. 
+                            Успішно перевірені елементи підраховані в загальному скорі та відображені в підсумку.
+                        </div>
+                        
                         <!-- Перцептивність -->
                         <div class="metric-section">
                             <h4 class="metric-section-title">
@@ -1133,7 +1138,6 @@ async def read_root():
                                 <div class="recommendation-item">
                                     <div class="recommendation-category">${rec.category} - ${rec.priority} пріоритет</div>
                                     <div class="recommendation-text">${rec.recommendation}</div>
-                                    <small style="color: #666;">WCAG: ${rec.wcag_reference}</small>
                                 </div>
                             `).join('')}
                         </div>
@@ -1179,7 +1183,7 @@ async def read_root():
                 }
             }
             
-            // Генерація детального аналізу alt-text
+            // Генерація детального аналізу alt-text (тільки проблемні елементи)
             function generateAltTextDetails(details) {
                 if (!details) return '<p>Детальна інформація недоступна</p>';
                 
@@ -1187,11 +1191,14 @@ async def read_root():
                     <div class="score-explanation">
                         <strong>${details.score_explanation}</strong>
                     </div>
+                    <div style="background: #e3f2fd; border: 1px solid #bbdefb; border-radius: 6px; padding: 12px; margin: 15px 0; font-size: 14px;">
+                        <strong>📊 Підсумок:</strong> Успішних зображень: <strong>${details.correct_images_list?.length || 0}</strong>
+                    </div>
                 `;
                 
                 if (details.problematic_images && details.problematic_images.length > 0) {
                     html += `
-                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Проблемні зображення (${details.problematic_images.length}):</h4>
+                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Зображення для виправлення (${details.problematic_images.length}):</h4>
                         <div class="element-list">
                     `;
                     
@@ -1206,31 +1213,18 @@ async def read_root():
                     });
                     
                     html += '</div>';
-                }
-                
-                if (details.correct_images_list && details.correct_images_list.length > 0) {
+                } else {
                     html += `
-                        <h4 style="color: #27ae60; margin-top: 20px;">✅ Правильні зображення (${details.correct_images_list.length}):</h4>
-                        <div class="element-list">
+                        <div style="background: #e8f5e8; border: 1px solid #c3e6c3; border-radius: 6px; padding: 15px; margin: 15px 0; text-align: center;">
+                            <strong style="color: #27ae60;">✅ Відмінно! Всі зображення мають правильний альтернативний текст</strong>
+                        </div>
                     `;
-                    
-                    details.correct_images_list.forEach(img => {
-                        html += `
-                            <div class="element-item correct">
-                                <div class="element-selector">${img.selector}</div>
-                                <div class="element-html">${escapeHtml(img.html)}</div>
-                                <div class="element-status"><strong>Alt текст:</strong> "${img.alt_text}"</div>
-                            </div>
-                        `;
-                    });
-                    
-                    html += '</div>';
                 }
                 
                 return html;
             }
             
-            // Генерація детального аналізу контрасту
+            // Генерація детального аналізу контрасту (тільки проблемні елементи)
             function generateContrastDetails(details) {
                 if (!details) return '<p>Детальна інформація недоступна</p>';
                 
@@ -1238,11 +1232,14 @@ async def read_root():
                     <div class="score-explanation">
                         <strong>${details.score_explanation}</strong>
                     </div>
+                    <div style="background: #e3f2fd; border: 1px solid #bbdefb; border-radius: 6px; padding: 12px; margin: 15px 0; font-size: 14px;">
+                        <strong>📊 Підсумок:</strong> Елементів з правильним контрастом: <strong>${details.correct_elements_list?.length || 0}</strong>
+                    </div>
                 `;
                 
                 if (details.problematic_elements && details.problematic_elements.length > 0) {
                     html += `
-                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Елементи з низьким контрастом (${details.problematic_elements.length}):</h4>
+                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Елементи для покращення контрасту (${details.problematic_elements.length}):</h4>
                         <div class="element-list">
                     `;
                     
@@ -1272,35 +1269,18 @@ async def read_root():
                     });
                     
                     html += '</div>';
-                }
-                
-                if (details.correct_elements_list && details.correct_elements_list.length > 0) {
+                } else {
                     html += `
-                        <h4 style="color: #27ae60; margin-top: 20px;">✅ Елементи з правильним контрастом (${details.correct_elements_list.length}):</h4>
-                        <div class="element-list">
+                        <div style="background: #e8f5e8; border: 1px solid #c3e6c3; border-radius: 6px; padding: 15px; margin: 15px 0; text-align: center;">
+                            <strong style="color: #27ae60;">✅ Відмінно! Всі елементи мають достатній контраст</strong>
+                        </div>
                     `;
-                    
-                    details.correct_elements_list.slice(0, 5).forEach(elem => { // Показуємо тільки перші 5
-                        html += `
-                            <div class="element-item correct">
-                                <div class="element-selector">${elem.selector}</div>
-                                <div class="element-html">${escapeHtml(elem.html)}</div>
-                                <div class="element-status">${elem.status}</div>
-                            </div>
-                        `;
-                    });
-                    
-                    if (details.correct_elements_list.length > 5) {
-                        html += `<p style="text-align: center; color: #666; margin-top: 10px;">... та ще ${details.correct_elements_list.length - 5} елементів</p>`;
-                    }
-                    
-                    html += '</div>';
                 }
                 
                 return html;
             }
             
-            // Генерація детального аналізу заголовків
+            // Генерація детального аналізу заголовків (тільки проблемні елементи)
             function generateHeadingsDetails(details) {
                 if (!details) return '<p>Детальна інформація недоступна</p>';
                 
@@ -1308,11 +1288,14 @@ async def read_root():
                     <div class="score-explanation">
                         <strong>${details.score_explanation}</strong>
                     </div>
+                    <div style="background: #e3f2fd; border: 1px solid #bbdefb; border-radius: 6px; padding: 12px; margin: 15px 0; font-size: 14px;">
+                        <strong>📊 Підсумок:</strong> Правильних заголовків: <strong>${details.correct_headings_list?.length || 0}</strong>
+                    </div>
                 `;
                 
                 if (details.problematic_headings && details.problematic_headings.length > 0) {
                     html += `
-                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Проблемні заголовки (${details.problematic_headings.length}):</h4>
+                        <h4 style="color: #e74c3c; margin-top: 20px;">❌ Заголовки для виправлення (${details.problematic_headings.length}):</h4>
                         <div class="element-list">
                     `;
                     
@@ -1328,25 +1311,12 @@ async def read_root():
                     });
                     
                     html += '</div>';
-                }
-                
-                if (details.correct_headings_list && details.correct_headings_list.length > 0) {
+                } else {
                     html += `
-                        <h4 style="color: #27ae60; margin-top: 20px;">✅ Правильні заголовки (${details.correct_headings_list.length}):</h4>
-                        <div class="element-list">
+                        <div style="background: #e8f5e8; border: 1px solid #c3e6c3; border-radius: 6px; padding: 15px; margin: 15px 0; text-align: center;">
+                            <strong style="color: #27ae60;">✅ Відмінно! Всі заголовки мають правильну ієрархію</strong>
+                        </div>
                     `;
-                    
-                    details.correct_headings_list.forEach(heading => {
-                        html += `
-                            <div class="element-item correct">
-                                <div class="element-selector">${heading.selector}</div>
-                                <div class="element-html">${escapeHtml(heading.html)}</div>
-                                <div class="element-status"><strong>Правило:</strong> ${heading.rule} - ${heading.status}</div>
-                            </div>
-                        `;
-                    });
-                    
-                    html += '</div>';
                 }
                 
                 return html;
@@ -1370,30 +1340,13 @@ async def read_root():
                         </div>
                     `;
                     
+                    // Правильні елементи приховано для фокусу на проблемах
                     if (details.accessible_elements_list && details.accessible_elements_list.length > 0) {
                         html += `
-                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Доступні елементи (${details.accessible_elements_list.length}):</h4>
-                            <div class="element-list">
+                            <div style="background: #e8f5e8; border: 1px solid #c3e6c3; border-radius: 6px; padding: 12px; margin: 15px 0; font-size: 14px;">
+                                <strong>✅ Доступних елементів з клавіатури: ${details.accessible_elements_list.length}</strong>
+                            </div>
                         `;
-                        
-                        details.accessible_elements_list.forEach(element => {
-                            html += `
-                                <div class="element-item correct">
-                                    <div class="element-selector">
-                                        <strong>Селектор:</strong> ${element.selector || 'невідомо'}
-                                    </div>
-                                    <div class="element-html">${escapeHtml(element.html || 'HTML недоступний')}</div>
-                                    <div class="element-status">
-                                        <strong>Правило:</strong> ${element.rule || 'невідомо'}
-                                    </div>
-                                    <div class="element-status">
-                                        <strong>Статус:</strong> ${element.status || 'Доступний з клавіатури'}
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        
-                        html += '</div>';
                     }
                     
                     if (details.problematic_elements && details.problematic_elements.length > 0) {
@@ -1454,31 +1407,10 @@ async def read_root():
                     
                     if (details.accessible_media_list && details.accessible_media_list.length > 0) {
                         html += `
-                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Доступні відео (${details.accessible_media_list.length}):</h4>
-                            <div class="element-list">
+                            <div style="background: #e8f5e8; border: 1px solid #c3e6c3; border-radius: 6px; padding: 12px; margin: 15px 0; font-size: 14px;">
+                                <strong>✅ Доступних медіа елементів: ${details.accessible_media_list.length}</strong>
+                            </div>
                         `;
-                        
-                        details.accessible_media_list.forEach(video => {
-                            html += `
-                                <div class="element-item correct">
-                                    <div class="element-selector">
-                                        <strong>Тип:</strong> ${video.type || 'невідомо'} (${video.platform || 'native'})
-                                    </div>
-                                    <div class="element-selector">
-                                        <strong>Назва:</strong> ${video.title || 'Без назви'}
-                                    </div>
-                                    <div class="element-html">${escapeHtml(video.html || 'HTML недоступний')}</div>
-                                    <div class="element-status">
-                                        <strong>URL:</strong> ${video.src ? video.src.substring(0, 80) + (video.src.length > 80 ? '...' : '') : 'Немає URL'}
-                                    </div>
-                                    <div class="element-status">
-                                        <strong>Статус:</strong> ${video.status || 'Доступне відео'}
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        
-                        html += '</div>';
                     }
                     
                     if (details.problematic_media && details.problematic_media.length > 0) {
@@ -1652,28 +1584,10 @@ async def read_root():
                     
                     if (details.assisted_fields_list && details.assisted_fields_list.length > 0) {
                         html += `
-                            <h4 style="color: #27ae60; margin-top: 20px;">✅ Поля з допомогою (${details.assisted_fields_list.length}):</h4>
-                            <div class="element-list">
+                            <div style="background: #e8f5e8; border: 1px solid #c3e6c3; border-radius: 6px; padding: 12px; margin: 15px 0; font-size: 14px;">
+                                <strong>✅ Полів з допомогою: ${details.assisted_fields_list.length}</strong>
+                            </div>
                         `;
-                        
-                        details.assisted_fields_list.forEach(field => {
-                            html += `
-                                <div class="element-item correct">
-                                    <div class="element-selector">
-                                        <strong>Селектор:</strong> ${field.selector || 'невідомо'}
-                                    </div>
-                                    <div class="element-html">${escapeHtml(field.html || 'HTML недоступний')}</div>
-                                    <div class="element-status">
-                                        <strong>Результат оцінки:</strong> ✅ З допомогою
-                                    </div>
-                                    <div class="element-status">
-                                        <strong>Типи допомоги:</strong> ${field.assistance || 'Невідомо'}
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        
-                        html += '</div>';
                     }
                 } else {
                     html += `
