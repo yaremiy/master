@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Оцінка доступності вебсайтів</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Оцінка доступності вебсайтів</h1>
+            <p>Комплексний аналіз відповідності стандартам WCAG 2.1</p>
+        </div>
+
+        <div class="main-content">
+            <div class="tabs">
+                <button class="tab-button active" onclick="switchTab('url')">📊 Аналіз URL</button>
+                <button class="tab-button" onclick="switchTab('api')">🔧 API Документація</button>
+                <button class="tab-button" onclick="switchTab('about')">ℹ️ Про систему</button>
+            </div>
+
+            <div id="url-tab" class="tab-content active">
+                <div class="url-form">
+                    <h2>Аналіз сторінки за URL</h2>
+                    <form id="analyze-form">
+                        <div class="input-group">
+                            <label for="url-input">URL для аналізу:</label>
+                            <input type="url" id="url-input" placeholder="https://example.com" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <span class="btn-icon">🚀</span>
+                            Аналізувати
+                        </button>
+                    </form>
+
+                    <div id="results" class="results" style="display: none;">
+                        <h3>Результати аналізу</h3>
+                        <div id="results-content"></div>
+                    </div>
+
+                    <div id="loading" class="loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Аналіз в процесі...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="api-tab" class="tab-content">
+                <div class="api-docs">
+                    <h2>API Endpoints</h2>
+                    <div class="endpoint">
+                        <h3>POST /api/evaluate</h3>
+                        <p>Аналіз сторінки за URL</p>
+                        <pre><code>{
+  "url": "https://example.com"
+}</code></pre>
+                    </div>
+
+                    <div class="endpoint">
+                        <h3>GET /api/health</h3>
+                        <p>Перевірка статусу API</p>
+                    </div>
+
+                    <a href="/docs" class="btn btn-secondary">📖 Повна документація (Swagger)</a>
+                </div>
+            </div>
+
+            <div id="about-tab" class="tab-content">
+                <div class="about">
+                    <h2>Про систему</h2>
+                    <p>Accessibility Evaluator - це комплексна система оцінки доступності веб-сторінок.</p>
+
+                    <h3>Метрики аналізу:</h3>
+                    <ul>
+                        <li>👁️ Перцептивність - альтернативний текст, контрастність</li>
+                        <li>⌨️ Керованість - клавіатурна навігація, структура</li>
+                        <li>💡 Зрозумілість - підтримка помилок, читабельність</li>
+                        <li>🌍 Локалізація - багатомовність, напрямок тексту</li>
+                    </ul>
+
+                    <h3>Технології:</h3>
+                    <ul>
+                        <li>FastAPI - backend API</li>
+                        <li>Playwright - автоматизоване тестування</li>
+                        <li>axe-core - перевірка WCAG</li>
+                        <li>Python 3.11+ - основна мова</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Accessibility Evaluator v1.0.0</p>
+            <p>Базується на WCAG 2.1 та ISO 25023</p>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

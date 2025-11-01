@@ -4,34 +4,30 @@
   "version": "1.0.1",
   "description": "Комплексний аналізатор доступності веб-сторінок з систематичним тестуванням форм",
   "author": "Accessibility Team",
-  
+
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
     "downloads"
   ],
-  
+
   "host_permissions": [
     "http://localhost:8001/*",
     "http://127.0.0.1:8001/*",
-    "http://0.0.0.0:8001/*",
-    "http://localhost:8000/*",
-    "http://127.0.0.1:8000/*",
-    "http://0.0.0.0:8000/*"
+    "http://0.0.0.0:8001/*"
   ],
-  
+
   "action": {
-    "default_popup": "popup/popup.html"
+    "default_popup": "src/popup/popup.html"
   },
-  
-  
-  "background": {
-    "service_worker": "background/background.js"
-  },
-  
+
   "web_accessible_resources": [{
-    "resources": ["assets/*"],
+    "resources": [
+      "assets/*",
+      "src/templates/*",
+      "src/styles/*"
+    ],
     "matches": ["<all_urls>"]
   }]
 }

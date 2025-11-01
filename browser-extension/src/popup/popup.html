@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="uk">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accessibility Evaluator</title>
     <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
     <div class="accessibility-popup">
         <header class="popup-header">
@@ -17,7 +19,7 @@
                 <div class="version">v1.0.0</div>
             </div>
         </header>
-        
+
         <main class="popup-main">
             <!-- Кнопка аналізу -->
             <div class="analyze-section">
@@ -30,7 +32,7 @@
                     <span class="progress-text">Аналіз...</span>
                 </div>
             </div>
-            
+
             <!-- Результати аналізу -->
             <div id="results-container" class="results-container" style="display: none;">
                 <!-- Загальний скор -->
@@ -42,7 +44,7 @@
                     </div>
                     <div id="score-interpretation" class="score-interpretation"></div>
                 </div>
-                
+
                 <!-- Метрики -->
                 <div class="metrics-grid">
                     <div class="metric-card perceptibility" data-metric="perceptibility">
@@ -56,7 +58,7 @@
                         </div>
                         <div class="metric-description">Альтернативи для медіа, контрастність</div>
                     </div>
-                    
+
                     <div class="metric-card operability" data-metric="operability">
                         <div class="metric-header">
                             <span class="metric-icon">⚡</span>
@@ -68,7 +70,7 @@
                         </div>
                         <div class="metric-description">Клавіатурна навігація, фокус</div>
                     </div>
-                    
+
                     <div class="metric-card understandability" data-metric="understandability">
                         <div class="metric-header">
                             <span class="metric-icon">🧠</span>
@@ -80,7 +82,7 @@
                         </div>
                         <div class="metric-description">Підтримка помилок, читабельність</div>
                     </div>
-                    
+
                     <div class="metric-card localization" data-metric="localization">
                         <div class="metric-header">
                             <span class="metric-icon">🌍</span>
@@ -93,7 +95,7 @@
                         <div class="metric-description">Мова, напрямок тексту</div>
                     </div>
                 </div>
-                
+
                 <!-- Детальні результати -->
                 <div class="detailed-section">
                     <button id="toggle-details" class="toggle-details-btn">
@@ -104,7 +106,7 @@
                         <!-- Детальна інформація буде додана динамічно -->
                     </div>
                 </div>
-                
+
                 <!-- Дії -->
                 <div class="actions-section">
                     <div class="export-buttons">
@@ -117,13 +119,9 @@
                             Відкрити звіт
                         </button>
                     </div>
-                    <button id="highlight-issues" class="action-btn highlight-btn">
-                        <span class="btn-icon">🎯</span>
-                        Підсвітити проблеми
-                    </button>
                 </div>
             </div>
-            
+
             <!-- Повідомлення про помилки -->
             <div id="error-container" class="error-container" style="display: none;">
                 <div class="error-message">
@@ -132,15 +130,16 @@
                 </div>
             </div>
         </main>
-        
-        <footer class="popup-footer">
+
+        <!-- <footer class="popup-footer">
             <div class="footer-links">
                 <button id="settings-btn" class="footer-btn">⚙️ Налаштування</button>
                 <button id="help-btn" class="footer-btn">❓ Допомога</button>
             </div>
-        </footer>
+        </footer> -->
     </div>
-    
+
     <script src="popup.js"></script>
 </body>
+
 </html>
