@@ -8,7 +8,7 @@ class AccessibilityAnalyzer {
         this.isAnalyzing = false;
         this.currentResults = null;
         this.highlightedElements = [];
-        
+
         // Перевіряємо доступність FormTester
         if (typeof FormTester !== 'undefined') {
             this.formTester = new FormTester();
@@ -16,7 +16,7 @@ class AccessibilityAnalyzer {
             console.warn('FormTester недоступний, створюємо заглушку');
             this.formTester = this.createBasicFormTester();
         }
-        
+
         this.init();
     }
 
@@ -36,7 +36,7 @@ class AccessibilityAnalyzer {
 
     init() {
         this.setupMessageListener();
-        
+
         // Перевіряємо доступність helpers
         if (typeof window.AccessibilityHelpers === 'undefined') {
             console.warn('AccessibilityHelpers недоступний, створюємо базову реалізацію');
@@ -44,7 +44,7 @@ class AccessibilityAnalyzer {
         } else {
             this.helpers = window.AccessibilityHelpers;
         }
-        
+
         this.helpers.log('Accessibility Analyzer ініціалізовано');
     }
 
@@ -56,9 +56,9 @@ class AccessibilityAnalyzer {
             isElementVisible: (element) => {
                 if (!element) return false;
                 const style = window.getComputedStyle(element);
-                return style.display !== 'none' && 
-                       style.visibility !== 'hidden' && 
-                       style.opacity !== '0';
+                return style.display !== 'none' &&
+                    style.visibility !== 'hidden' &&
+                    style.opacity !== '0';
             },
             isFocusable: (element) => {
                 if (!element) return false;
@@ -67,9 +67,9 @@ class AccessibilityAnalyzer {
             },
             getAccessibleName: (element) => {
                 if (!element) return '';
-                return element.getAttribute('aria-label') || 
-                       element.textContent?.trim() || 
-                       element.getAttribute('title') || '';
+                return element.getAttribute('aria-label') ||
+                    element.textContent?.trim() ||
+                    element.getAttribute('title') || '';
             },
             calculateContrast: (foreground, background) => {
                 // Спрощена реалізація
@@ -203,7 +203,7 @@ class AccessibilityAnalyzer {
             url: window.location.href,
             title: document.title,
             html_content: document.documentElement.outerHTML,
-            
+
             // Елементи для аналізу
             images: Array.from(document.querySelectorAll('img')),
             links: Array.from(document.querySelectorAll('a[href]')),
@@ -211,17 +211,17 @@ class AccessibilityAnalyzer {
             forms: Array.from(document.querySelectorAll('form')),
             headings: Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')),
             inputs: Array.from(document.querySelectorAll('input, textarea, select')),
-            
+
             // Інтерактивні елементи
             interactive_elements: this.getInteractiveElements(),
-            
+
             // Медіа елементи
             videos: Array.from(document.querySelectorAll('video')),
             audio: Array.from(document.querySelectorAll('audio')),
-            
+
             // Структурні елементи
             landmarks: this.getLandmarks(),
-            
+
             // Мова та напрямок
             language: this.getDocumentLanguage(),
             direction: this.getTextDirection()
@@ -240,11 +240,11 @@ class AccessibilityAnalyzer {
 
     async calculateMetrics(pageData, options) {
         this.helpers.log('🌐 Використовуємо Python backend для розрахунку метрик', 'info');
-        
+
         try {
             // Відправляємо HTML на Python backend
             const response = await this.callPythonBackend(pageData);
-            
+
             if (response.error) {
                 this.helpers.log(`Помилка backend: ${response.error}`, 'error');
                 return await this.calculateMetricsFallback(pageData, options);
@@ -253,7 +253,7 @@ class AccessibilityAnalyzer {
             // Backend повертає структуру: { metrics: {...}, subscores: {...}, final_score: ... }
             const backendMetrics = response.metrics || {};
             const subscores = response.subscores || {};
-            
+
             const metrics = {
                 perceptibility: subscores.perceptibility || backendMetrics.perceptibility || 0,
                 operability: subscores.operability || backendMetrics.operability || 0,
@@ -280,7 +280,7 @@ class AccessibilityAnalyzer {
 
     async callPythonBackend(pageData) {
         const backendUrl = 'http://localhost:8000/api/evaluate-html';
-        
+
         const requestData = {
             html_content: pageData.html_content,
             base_url: pageData.url,
@@ -307,13 +307,13 @@ class AccessibilityAnalyzer {
         const result = await response.json();
         this.helpers.log('📥 Отримано відповідь від backend', 'info');
         this.helpers.log('Backend response:', result);
-        
+
         return result;
     }
 
     async calculateMetricsFallback(pageData, options) {
         this.helpers.log('🔄 Backend недоступний, повертаємо базові значення', 'warn');
-        
+
         // Якщо backend недоступний, повертаємо нейтральні значення
         const metrics = {
             perceptibility: 0.7,
@@ -368,10 +368,10 @@ class AccessibilityAnalyzer {
         const issues = [];
 
         // Проблеми зображень
-        const imagesWithoutAlt = pageData.images.filter(img => 
+        const imagesWithoutAlt = pageData.images.filter(img =>
             this.helpers.isElementVisible(img) && (!img.alt || img.alt.trim() === '')
         );
-        
+
         imagesWithoutAlt.forEach(img => {
             issues.push({
                 type: 'missing_alt_text',
@@ -439,12 +439,12 @@ class AccessibilityAnalyzer {
             'a[href]', 'button', 'input', 'select', 'textarea',
             '[tabindex]', '[onclick]', '[role="button"]', '[role="link"]'
         ];
-        
+
         const elements = [];
         selectors.forEach(selector => {
             elements.push(...Array.from(document.querySelectorAll(selector)));
         });
-        
+
         return elements.filter(el => this.helpers.isElementVisible(el));
     }
 
@@ -452,7 +452,7 @@ class AccessibilityAnalyzer {
         const landmarks = [];
         const landmarkSelectors = [
             'main, [role="main"]',
-            'nav, [role="navigation"]', 
+            'nav, [role="navigation"]',
             'header, [role="banner"]',
             'footer, [role="contentinfo"]',
             'aside, [role="complementary"]',
@@ -474,16 +474,16 @@ class AccessibilityAnalyzer {
     }
 
     getDocumentLanguage() {
-        return document.documentElement.lang || 
-               document.querySelector('html')?.getAttribute('lang') || 
-               'unknown';
+        return document.documentElement.lang ||
+            document.querySelector('html')?.getAttribute('lang') ||
+            'unknown';
     }
 
     getTextDirection() {
-        return document.documentElement.dir || 
-               document.querySelector('html')?.getAttribute('dir') ||
-               window.getComputedStyle(document.documentElement).direction || 
-               'auto';
+        return document.documentElement.dir ||
+            document.querySelector('html')?.getAttribute('dir') ||
+            window.getComputedStyle(document.documentElement).direction ||
+            'auto';
     }
 
     // UI методи
@@ -491,7 +491,7 @@ class AccessibilityAnalyzer {
         const overlay = document.createElement('div');
         overlay.className = 'accessibility-overlay';
         overlay.id = 'accessibility-analysis-overlay';
-        
+
         overlay.innerHTML = `
             <div class="accessibility-overlay-content">
                 <div class="accessibility-spinner"></div>
@@ -502,9 +502,9 @@ class AccessibilityAnalyzer {
                 </div>
             </div>
         `;
-        
+
         document.body.appendChild(overlay);
-        
+
         // Анімація прогресу
         let progress = 0;
         const progressBar = overlay.querySelector('.accessibility-progress-bar');
@@ -513,7 +513,7 @@ class AccessibilityAnalyzer {
             if (progress > 90) progress = 90;
             progressBar.style.width = progress + '%';
         }, 200);
-        
+
         overlay.dataset.progressInterval = interval;
     }
 
@@ -529,7 +529,7 @@ class AccessibilityAnalyzer {
 
     highlightIssues(issues) {
         this.clearHighlights();
-        
+
         issues.forEach(issue => {
             try {
                 const element = document.querySelector(issue.element);
@@ -537,7 +537,7 @@ class AccessibilityAnalyzer {
                     const className = `accessibility-highlight-${issue.severity}`;
                     element.classList.add(className);
                     this.highlightedElements.push({ element, className });
-                    
+
                     // Додаємо tooltip
                     this.addTooltip(element, issue.description);
                 }
@@ -560,14 +560,14 @@ class AccessibilityAnalyzer {
         const tooltip = document.createElement('div');
         tooltip.className = 'accessibility-tooltip';
         tooltip.textContent = text;
-        
+
         element.style.position = 'relative';
         element.appendChild(tooltip);
-        
+
         element.addEventListener('mouseenter', () => {
             tooltip.classList.add('show');
         });
-        
+
         element.addEventListener('mouseleave', () => {
             tooltip.classList.remove('show');
         });

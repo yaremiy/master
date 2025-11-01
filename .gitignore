@@ -2,3 +2,5 @@ node_modules
 *.doc
 *.pdf
 .DS_Store
+*.pyc
+__pycache__
