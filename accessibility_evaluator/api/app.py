@@ -46,6 +46,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Helper Functions
 
+
 def get_quality_level(score: float) -> tuple:
     """
     Визначає рівень якості та опис на основі скору
@@ -138,7 +139,8 @@ async def evaluate_accessibility(request: URLRequest):
         print(f"📊 Загальний скор: {result['final_score']:.2%}")
 
         # Додаємо quality_level та quality_description
-        quality_level, quality_description = get_quality_level(result['final_score'])
+        quality_level, quality_description = get_quality_level(
+            result['final_score'])
         result['quality_level'] = quality_level
         result['quality_description'] = quality_description
 
@@ -181,6 +183,10 @@ async def evaluate_html(request: HTMLRequest):
         print(f"\n🔍 Початок оцінки доступності HTML контенту")
         print(f"📄 Розмір HTML: {len(request.html_content)} символів")
 
+        # save request.html_content to a file for evaluation
+        # with open("temp_html_content.html", "w", encoding="utf-8") as f:
+        #     f.write(request.html_content)
+
         evaluator = AccessibilityEvaluator()
         result = await evaluator.evaluate_html_content(
             html_content=request.html_content,
@@ -192,7 +198,8 @@ async def evaluate_html(request: HTMLRequest):
         print(f"📊 Загальний скор: {result['final_score']:.2%}")
 
         # Додаємо quality_level та quality_description
-        quality_level, quality_description = get_quality_level(result['final_score'])
+        quality_level, quality_description = get_quality_level(
+            result['final_score'])
         result['quality_level'] = quality_level
         result['quality_description'] = quality_description
 
@@ -249,7 +256,8 @@ async def generate_report(request: Request, data: EvaluationResponse):
     quality_description = data.quality_description
 
     if not quality_level or not quality_description:
-        quality_level, quality_description = get_quality_level(data.final_score)
+        quality_level, quality_description = get_quality_level(
+            data.final_score)
 
     return templates.TemplateResponse("report.html", {
         "request": request,

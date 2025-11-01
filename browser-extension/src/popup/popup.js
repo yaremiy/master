@@ -148,6 +148,7 @@ class AccessibilityPopup {
 
       // Витягуємо HTML поточної сторінки з absolute URLs
       console.log("📄 Витягуємо HTML сторінки...");
+      // TODO: maybe return old version
       const [{ result: pageData }] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
@@ -155,30 +156,36 @@ class AccessibilityPopup {
           const clone = document.documentElement.cloneNode(true);
 
           // Обробляємо images
-          clone.querySelectorAll('img[src]').forEach(img => {
+          clone.querySelectorAll("img[src]").forEach((img) => {
             try {
-              img.src = new URL(img.getAttribute('src'), document.baseURI).href;
+              img.src = new URL(img.getAttribute("src"), document.baseURI).href;
             } catch (e) {
-              console.warn('Invalid image URL:', img.getAttribute('src'));
+              console.warn("Invalid image URL:", img.getAttribute("src"));
             }
           });
 
           // Обробляємо links (stylesheets, scripts)
-          clone.querySelectorAll('link[href]').forEach(link => {
+          clone.querySelectorAll("link[href]").forEach((link) => {
             try {
-              link.href = new URL(link.getAttribute('href'), document.baseURI).href;
+              link.href = new URL(
+                link.getAttribute("href"),
+                document.baseURI
+              ).href;
             } catch (e) {}
           });
 
-          clone.querySelectorAll('script[src]').forEach(script => {
+          clone.querySelectorAll("script[src]").forEach((script) => {
             try {
-              script.src = new URL(script.getAttribute('src'), document.baseURI).href;
+              script.src = new URL(
+                script.getAttribute("src"),
+                document.baseURI
+              ).href;
             } catch (e) {}
           });
 
           return {
             html: clone.outerHTML,
-            baseUrl: document.baseURI
+            baseUrl: document.baseURI,
           };
         },
       });
@@ -416,7 +423,9 @@ class AccessibilityPopup {
       results.issues.slice(0, 5).forEach((issue) => {
         html += `
                     <div class="issue-item ${issue.severity}">
-                        <span class="issue-severity">${this.getSeverityIcon(issue.severity)}</span>
+                        <span class="issue-severity">${this.getSeverityIcon(
+                          issue.severity
+                        )}</span>
                         <span class="issue-text">${issue.description}</span>
                     </div>
                 `;
@@ -432,30 +441,30 @@ class AccessibilityPopup {
     }
 
     // Статистика по метриках
-    html += `
-            <div class="metrics-details">
-                <h4>📊 Детальна статистика</h4>
-                <div class="stats-grid">
-        `;
+    // html += `
+    //         <div class="metrics-details">
+    //             <h4>📊 Детальна статистика</h4>
+    //             <div class="stats-grid">
+    //     `;
 
-    const metricsInfo = {
-      perceptibility: "Сприйнятність",
-      operability: "Керованість",
-      understandability: "Зрозумілість",
-      localization: "Локалізація",
-    };
+    // const metricsInfo = {
+    //   perceptibility: "Сприйнятність",
+    //   operability: "Керованість",
+    //   understandability: "Зрозумілість",
+    //   localization: "Локалізація",
+    // };
 
-    Object.entries(metricsInfo).forEach(([key, title]) => {
-      const score = Math.round((results.metrics[key] || 0) * 100);
-      html += `
-                <div class="stat-item">
-                    <span class="stat-label">${title}:</span>
-                    <span class="stat-value">${score}%</span>
-                </div>
-            `;
-    });
+    // Object.entries(metricsInfo).forEach(([key, title]) => {
+    //   const score = Math.round((results.metrics[key] || 0) * 100);
+    //   html += `
+    //             <div class="stat-item">
+    //                 <span class="stat-label">${title}:</span>
+    //                 <span class="stat-value">${score}%</span>
+    //             </div>
+    //         `;
+    // });
 
-    html += "</div></div>";
+    // html += "</div></div>";
 
     // Рекомендації
     if (results.recommendations && results.recommendations.length > 0) {
