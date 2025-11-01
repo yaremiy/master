@@ -146,17 +146,48 @@ class AccessibilityPopup {
 
       console.log(`🔍 Аналізуємо сторінку: ${tab.url}`);
 
-      // Витягуємо HTML поточної сторінки
+      // Витягуємо HTML поточної сторінки з absolute URLs
       console.log("📄 Витягуємо HTML сторінки...");
-      const [{ result: htmlContent }] = await chrome.scripting.executeScript({
+      const [{ result: pageData }] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: () => document.documentElement.outerHTML,
+        func: () => {
+          // Конвертуємо всі relative URLs в absolute
+          const clone = document.documentElement.cloneNode(true);
+
+          // Обробляємо images
+          clone.querySelectorAll('img[src]').forEach(img => {
+            try {
+              img.src = new URL(img.getAttribute('src'), document.baseURI).href;
+            } catch (e) {
+              console.warn('Invalid image URL:', img.getAttribute('src'));
+            }
+          });
+
+          // Обробляємо links (stylesheets, scripts)
+          clone.querySelectorAll('link[href]').forEach(link => {
+            try {
+              link.href = new URL(link.getAttribute('href'), document.baseURI).href;
+            } catch (e) {}
+          });
+
+          clone.querySelectorAll('script[src]').forEach(script => {
+            try {
+              script.src = new URL(script.getAttribute('src'), document.baseURI).href;
+            } catch (e) {}
+          });
+
+          return {
+            html: clone.outerHTML,
+            baseUrl: document.baseURI
+          };
+        },
       });
 
-      if (!htmlContent) {
+      if (!pageData || !pageData.html) {
         throw new Error("Не вдалося отримати HTML сторінки");
       }
 
+      const htmlContent = pageData.html;
       console.log(`📊 Розмір HTML: ${htmlContent.length} символів`);
 
       // Викликаємо Flask API для аналізу HTML

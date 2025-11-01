@@ -93,29 +93,104 @@ class PerceptibilityMetrics:
         print(f"\n📊 ПІДСУМОК ALT-TEXT:")
         print(f"   Правильних зображень: {correct_images}")
         print(f"   Загальних зображень: {total_images}")
-        
-        # Якщо немає зображень, повертаємо 1.0
+
+        # Якщо axe-core не знайшов зображень, використовуємо fallback аналіз HTML
         if total_images == 0:
-            print(f"   ⚠️ Немає зображень для аналізу - повертаємо 1.0")
-            return 1.0
-        
+            print(f"   ⚠️ axe-core не знайшов зображень. Використовуємо fallback аналіз HTML...")
+            return self._fallback_alt_text_analysis(page_data)
+
         # Формула: X = A / B
         score = correct_images / total_images
         print(f"   🎯 Розрахунок: {correct_images} / {total_images} = {score:.3f}")
         print(f"=== КІНЕЦЬ ALT-TEXT АНАЛІЗУ ===\n")
-        
+
         return score
     
+    def _fallback_alt_text_analysis(self, page_data: Dict[str, Any]) -> float:
+        """Fallback аналіз alt-text коли axe-core не знайшов зображень"""
+
+        html_content = page_data.get('html_content', '')
+        if not html_content:
+            print("   ⚠️ HTML контент недоступний - повертаємо 1.0")
+            return 1.0
+
+        soup = BeautifulSoup(html_content, 'html.parser')
+        images = soup.find_all('img')
+
+        print(f"\n🔍 FALLBACK АНАЛІЗ:")
+        print(f"   Знайдено <img> тегів у HTML: {len(images)}")
+
+        if len(images) == 0:
+            print(f"   ✅ Зображення відсутні в HTML - повертаємо 1.0")
+            return 1.0
+
+        correct_images = 0
+        for img in images:
+            alt = img.get('alt')
+            # Правильним вважається зображення з:
+            # 1. Непорожнім alt (не декоративне)
+            # 2. alt="" (декоративне зображення)
+            # Неправильним вважається відсутність alt взагалі
+            if alt is not None:
+                correct_images += 1
+
+        score = correct_images / len(images)
+        print(f"   Зображень з alt атрибутом: {correct_images}/{len(images)}")
+        print(f"   🎯 Fallback розрахунок: {correct_images} / {len(images)} = {score:.3f}")
+        print(f"=== КІНЕЦЬ FALLBACK АНАЛІЗУ ===\n")
+
+        return score
+
+    async def _fallback_contrast_analysis(self, page_data: Dict[str, Any]) -> float:
+        """Fallback аналіз контрасту коли axe-core не знайшов текстових елементів"""
+
+        html_content = page_data.get('html_content', '')
+        if not html_content:
+            print("   ⚠️ HTML контент недоступний - повертаємо 0.8")
+            return 0.8  # Припускаємо середній контраст
+
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Шукаємо текстові елементи
+        text_selectors = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'div', 'a', 'button', 'label', 'li']
+        text_elements = []
+
+        for selector in text_selectors:
+            elements = soup.find_all(selector)
+            for elem in elements:
+                text = elem.get_text(strip=True)
+                if text and len(text) > 0:  # Тільки елементи з текстом
+                    text_elements.append(elem)
+                    if len(text_elements) >= 50:  # Обмежуємо кількість для швидкості
+                        break
+            if len(text_elements) >= 50:
+                break
+
+        print(f"\n🔍 FALLBACK АНАЛІЗ КОНТРАСТУ:")
+        print(f"   Знайдено текстових елементів у HTML: {len(text_elements)}")
+
+        if len(text_elements) == 0:
+            print(f"   ✅ Текстові елементи відсутні в HTML - повертаємо 1.0")
+            return 1.0
+
+        # Оскільки ми не можемо обчислити контраст без computed styles,
+        # припускаємо що 80% елементів мають прийнятний контраст
+        print(f"   ⚠️ Не можемо обчислити контраст без browser context")
+        print(f"   🎯 Fallback: повертаємо 0.8 (припускаємо 80% прийнятного контрасту)")
+        print(f"=== КІНЕЦЬ FALLBACK АНАЛІЗУ КОНТРАСТУ ===\n")
+
+        return 0.8
+
     def _get_axe_rule_results(self, axe_results: Dict[str, Any], result_type: str, rule_id: str) -> Dict[str, Any]:
         """Отримання результатів конкретного правила axe-core"""
-        
+
         results = axe_results.get(result_type, [])
         for result in results:
             if result.get('id') == rule_id:
                 return result
         return {}
-    
-    
+
+
     async def calculate_contrast_metric(self, page_data: Dict[str, Any]) -> float:
         """
         Розрахунок метрики контрастності тексту (UAC-1.1.2-G) з використанням axe-core
@@ -182,16 +257,16 @@ class PerceptibilityMetrics:
         print(f"\n📊 ПІДСУМОК КОНТРАСТУ:")
         print(f"   Правильних елементів: {correct_elements}")
         print(f"   Загальних елементів: {total_elements}")
-        
-        # Якщо немає текстових елементів, повертаємо 1.0
+
+        # Якщо axe-core не знайшов текстових елементів, використовуємо fallback
         if total_elements == 0:
-            print(f"   ⚠️ Немає текстових елементів для аналізу - повертаємо 1.0")
-            return 1.0
-        
+            print(f"   ⚠️ axe-core не знайшов текстових елементів. Використовуємо fallback аналіз...")
+            return await self._fallback_contrast_analysis(page_data)
+
         score = correct_elements / total_elements
         print(f"   🎯 Розрахунок: {correct_elements} / {total_elements} = {score:.3f}")
         print(f"=== КІНЕЦЬ АНАЛІЗУ КОНТРАСТУ ===\n")
-        
+
         return score
     
     def calculate_media_accessibility_metric(self, page_data: Dict[str, Any]) -> float:

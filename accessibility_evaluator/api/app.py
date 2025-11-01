@@ -259,6 +259,8 @@ async def generate_report(request: Request, data: EvaluationResponse):
         "quality_description": quality_description,
         "final_score": round(data.final_score * 100, 1),
         "subscores": data.subscores,
+        "metrics": data.metrics,  # Додаємо metrics для детального аналізу
+        "detailed_analysis": data.detailed_analysis or {},  # Додаємо detailed_analysis
         "recommendations": data.recommendations,
         "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         "get_score_class": get_score_class

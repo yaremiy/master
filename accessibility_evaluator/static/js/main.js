@@ -38,39 +38,19 @@ document.getElementById('analyze-form')?.addEventListener('submit', async (e) =>
             throw new Error(data.error || 'Помилка аналізу');
         }
 
-        // Display results
-        resultsContent.innerHTML = `
-            <div class="score-card">
-                <h2>Загальний скор: ${(data.final_score * 100).toFixed(1)}%</h2>
-                <p class="quality-level">${data.quality_level}</p>
-            </div>
+        // Генеруємо детальний звіт через /api/report (той самий template що й для експорту)
+        const reportResponse = await fetch('/api/report', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        });
 
-            <div class="metrics-grid">
-                <div class="metric">
-                    <h4>👁️ Перцептивність</h4>
-                    <div class="score">${(data.subscores.perceptibility * 100).toFixed(1)}%</div>
-                </div>
-                <div class="metric">
-                    <h4>⌨️ Керованість</h4>
-                    <div class="score">${(data.subscores.operability * 100).toFixed(1)}%</div>
-                </div>
-                <div class="metric">
-                    <h4>💡 Зрозумілість</h4>
-                    <div class="score">${(data.subscores.understandability * 100).toFixed(1)}%</div>
-                </div>
-                <div class="metric">
-                    <h4>🌍 Локалізація</h4>
-                    <div class="score">${(data.subscores.localization * 100).toFixed(1)}%</div>
-                </div>
-            </div>
+        const reportHTML = await reportResponse.text();
 
-            <div class="recommendations">
-                <h3>Рекомендації:</h3>
-                <ul>
-                    ${data.recommendations.map(r => `<li>${r.recommendation}</li>`).join('')}
-                </ul>
-            </div>
-        `;
+        // Вставляємо згенерований звіт
+        resultsContent.innerHTML = reportHTML;
 
         results.style.display = 'block';
 
