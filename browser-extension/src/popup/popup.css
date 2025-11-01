@@ -443,3 +443,146 @@ body {
 .popup-main::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* Detailed Results Section */
+.detailed-results {
+  margin-top: 16px;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+
+.detailed-content h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Issues Summary */
+.issues-summary {
+  margin-bottom: 20px;
+}
+
+.issues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border-left: 3px solid #dee2e6;
+}
+
+.issue-severity {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.issue-item.high {
+  border-left-color: #dc3545;
+  background: #fff5f5;
+}
+
+.issue-item.medium {
+  border-left-color: #ffc107;
+  background: #fffbf0;
+}
+
+.issue-item.low {
+  border-left-color: #17a2b8;
+  background: #f0f9fa;
+}
+
+.issue-text {
+  flex: 1;
+  font-size: 12px;
+  color: #495057;
+  line-height: 1.4;
+}
+
+.more-issues {
+  margin-top: 8px;
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Metrics Details */
+.metrics-details {
+  margin-bottom: 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border-left: 3px solid #667eea;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+/* Recommendations */
+.recommendations {
+  margin-bottom: 0;
+}
+
+.recommendations-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recommendation-item {
+  padding: 10px 12px;
+  padding-left: 32px;
+  background: #f0f8ff;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #495057;
+  position: relative;
+  line-height: 1.4;
+}
+
+.recommendation-item::before {
+  content: "💡";
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  font-size: 14px;
+}

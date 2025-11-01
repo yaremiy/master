@@ -146,15 +146,30 @@ class AccessibilityPopup {
 
       console.log(`🔍 Аналізуємо сторінку: ${tab.url}`);
 
-      // Викликаємо Flask API для аналізу
-      const response = await fetch(`${this.API_BASE_URL}/api/evaluate`, {
+      // Витягуємо HTML поточної сторінки
+      console.log("📄 Витягуємо HTML сторінки...");
+      const [{ result: htmlContent }] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => document.documentElement.outerHTML,
+      });
+
+      if (!htmlContent) {
+        throw new Error("Не вдалося отримати HTML сторінки");
+      }
+
+      console.log(`📊 Розмір HTML: ${htmlContent.length} символів`);
+
+      // Викликаємо Flask API для аналізу HTML
+      const response = await fetch(`${this.API_BASE_URL}/api/evaluate-html`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         body: JSON.stringify({
-          url: tab.url,
+          html_content: htmlContent,
+          base_url: tab.url,
+          title: tab.title,
         }),
       });
 
@@ -369,10 +384,8 @@ class AccessibilityPopup {
 
       results.issues.slice(0, 5).forEach((issue) => {
         html += `
-                    <div class="issue-item">
-                        <span class="issue-severity ${
-                          issue.severity
-                        }">${this.getSeverityIcon(issue.severity)}</span>
+                    <div class="issue-item ${issue.severity}">
+                        <span class="issue-severity">${this.getSeverityIcon(issue.severity)}</span>
                         <span class="issue-text">${issue.description}</span>
                     </div>
                 `;
